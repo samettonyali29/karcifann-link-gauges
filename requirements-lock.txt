@@ -1,0 +1,14 @@
+# The exact environment in which the byte-identical reproduction reported in
+# README section 8.6b was verified.  requirements.txt gives the floors the code
+# needs; this file records what was actually run, because float summation order
+# -- and therefore the last bits of a summed loss -- depends on the BLAS build
+# and its thread count.  Reproduction was run with
+#   OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
+# as experiments/run_all.sh sets.
+python==3.14.4
+numpy==2.5.3
+scipy==1.18.1
+matplotlib==3.11.1
+scikit-learn==1.9.0
+pytest==9.0.2
+# BLAS: scipy-openblas (bundled with the NumPy wheel)
