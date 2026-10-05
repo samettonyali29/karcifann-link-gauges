@@ -1,0 +1,6 @@
+method,average_rank,gap_to_best,critical_difference,separated_from_best,best_method
+gradient descent,2.625,0.875,2.156673364234835,0,KarciFANN
+KarciFANN,1.75,0.0,2.156673364234835,0,KarciFANN
+exp,2.875,1.125,2.156673364234835,0,KarciFANN
+tanh,3.125,1.375,2.156673364234835,0,KarciFANN
+log,4.625,2.875,2.156673364234835,1,KarciFANN

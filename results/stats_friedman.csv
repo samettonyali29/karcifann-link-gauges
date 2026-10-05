@@ -1,0 +1,2 @@
+blocks_datasets,methods,statistic,pvalue,power_floor_best_case_p,underpowered,nemenyi_critical_difference,rank_gradient descent,rank_KarciFANN,rank_exp,rank_tanh,rank_log
+8,5,14.0,0.007295055724436127,1.9130979702274063e-06,0,2.156673364234835,2.625,1.75,2.875,3.125,4.625
