@@ -21,10 +21,9 @@ and the current value of each individual weight `W`.
 |---|---|
 | `karcifann/` | the library: the derivative, the gauge family, the optimisers, the network, the statistics and the grid-edge audit |
 | `experiments/` | the scripts that produce every result; `run_all.sh` reproduces the lot |
-| `results/` | 113 CSVs — every number in this file and in the paper is generated from these |
+| `results/` | 113 CSVs — every number in this file is generated from these |
 | `figures/` | 108 files, each figure as both PDF and SVG |
-| `tests/` | 620 tests, including the enforcement checks described in §8.0b and §9 |
-| `paper/` | the manuscript (LaTeX source, bibliography and compiled PDF) |
+| `tests/` | 618 tests, including the enforcement checks described in §8.0b and §9 |
 
 **Reproducing everything.** Install the dependencies in `requirements.txt`,
 then run the seven queues and the aggregation pass:
@@ -46,10 +45,7 @@ python3 -m pytest -q
 ```
 
 **Licensing.** The code, results and figures are MIT-licensed (see `LICENSE`).
-The Elsevier `cas-sc` class files under `paper/` are the publisher's, are
-redistributed under the LaTeX Project Public License, and are not covered by
-that grant. The source papers this work analyses are not redistributed; §11
-lists them.
+The source papers this work analyses are not redistributed; §11 lists them.
 
 ---
 
@@ -1534,10 +1530,7 @@ Every experiment script records its console table to `results/*.csv` as well,
 and **every numeric table in this file is generated from those CSVs** by
 `experiments/update_readme.py`; `--check` fails if the prose has drifted from
 the data. Hand-copying numbers into prose was the cause of three separate
-inconsistencies in this project, so the opportunity has been removed. The
-manuscript's LaTeX tables are the one place values are still copied by hand;
-`paper/check_tables.py` regenerates each of them from `results/` and fails on
-any value the pipeline does not produce.
+inconsistencies in this project, so the opportunity has been removed.
 
 ```bash
 python3 experiments/run_analysis.py --dataset mnist --seeds 16   # writes results/*.csv
@@ -1729,7 +1722,7 @@ actually run.
 ## 9. Tests
 
 ```bash
-python3 -m pytest -q                    # 620 tests, ~250 s
+python3 -m pytest -q                    # 618 tests, ~250 s
 python3 -m pytest -q -m "not network"   # skip the dataset downloads
 python3 -m pytest -q -m results         # audit the committed results/ only
 ```
@@ -1804,12 +1797,6 @@ the flag that left the baseline tuned over a narrower grid than its rivals.
 Every script is imported and checked for a callable `main`, so a syntax error
 fails in a second rather than three hours into a batch run.
 
-**`test_paper.py` — the manuscript's tables.** `paper/check_tables.py` compares
-every measured LaTeX table against the one `results/` generates, cell by cell
-and counting repeats; this runs it, and then mutates one digit of one cell to
-check the comparison actually fails. A guard that has never been seen to fail is
-not yet a guard.
-
 **`test_datasets.py`, `test_metrics.py`, `test_learning.py`, `test_trainer.py`.**
 Dry Bean against its published class counts; split disjointness; macro averaging
 giving a rare class equal weight; XOR solved with no learning rate for
@@ -1848,7 +1835,7 @@ Two caveats worth stating plainly:
 
 ## 11. References
 
-Generated from `paper/refs.bib`, numbered as the manuscript numbers its bibliography.
+The literature this repository analyses and the sources the analysis builds on.
 
 <!-- table:references -->
 1. M. Karakurt, H. Saygılı, A. Karcı, "Karcı fractional artificial neural networks (KarcıFANN): a new artificial neural networks model without learning rate and its problems", *Turkish Journal of Electrical Engineering and Computer Sciences* 33(3):248–263, 2025. doi:10.55730/1300-0632.4125
