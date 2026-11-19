@@ -36,13 +36,17 @@ W="0.5 1 2 4 8 16 32 64 128"
 # Vehicle is the one dataset whose optima run below that floor.
 W_VEHICLE="0.03 0.0625 0.125 0.25 0.5 1 2 4 8 16 32 64 128"
 
-# Every dataset gets the same three passes: the gauge-family sweep first (E1
-# reads its winners back), then the full E1-E5 analysis, then headroom.
+# Every dataset gets the same four passes: the gauge-family sweep first (E1
+# reads its winners back), then the full E1-E5 analysis, then headroom, then
+# the depth study.  The last one repeats the family comparison outside the
+# configuration the other three share, so it is the one pass whose result is
+# not conditional on that configuration being the right place to look.
 full() {
     local d=$1 grid=$2
     run $P -u experiments/gauge_family.py --dataset "$d" --seeds 16 --scales $grid
     run $P -u experiments/run_analysis.py --dataset "$d" --seeds 16
     run $P -u experiments/headroom.py --dataset "$d" --seeds 16
+    run $P -u experiments/depth_gauges.py --dataset "$d" --seeds 16
 }
 
 case "${1:?queue name 1-8 or 'figures'}" in
@@ -82,8 +86,6 @@ case "${1:?queue name 1-8 or 'figures'}" in
     done ;;
 figures)
     run $P -u experiments/draw_architecture.py
-    # Restore the current MNIST design after drawing the general collection.
-    run $P -u experiments/draw_mnist_architecture.py
     run $P -u experiments/make_figures.py
     run $P -u experiments/update_readme.py ;;
 *)  echo "unknown queue: $1"; exit 2 ;;

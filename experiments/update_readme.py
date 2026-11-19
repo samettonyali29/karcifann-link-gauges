@@ -202,6 +202,96 @@ def table_headroom_optimiser() -> str:
     return "\n".join(lines)
 
 
+def table_depth_gauges() -> str:
+    """The family comparison repeated outside the configuration it was judged in.
+
+    Every other gauge table in this repository is computed at one hidden layer
+    of 50 sigmoid units on mean squared error.  This one repeats the
+    comparison at two hidden layers of 128 ReLU units with a softmax output
+    and cross-entropy loss, against Adam as well as SGD, holding the splits
+    and the update budget fixed.  It is the one table whose result is not
+    conditional on that configuration being the right place to look.
+    """
+    import numpy as np
+
+    names = ["power", "exp", "gradient descent", "adam"]
+    heads = ["power (KarciFANN)", "exp", "SGD", "Adam"]
+    lines = ["| dataset | " + " | ".join(heads) + " |",
+             "|---" + "|---:" * len(heads) + "|"]
+    any_row = False
+    for dataset in ORDER:
+        cells, means = {}, {}
+        for row in read(f"depth_gauges_{dataset}"):
+            if row["stage"] == "summary":
+                means[row["method"]] = (100.0 * float(row["test_mean"]),
+                                        100.0 * float(row["test_ci95"]))
+        if not means:
+            continue
+        any_row = True
+        best = max((means[m][0] for m in names if m in means), default=None)
+        for m in names:
+            if m not in means:
+                cells[m] = "--"
+                continue
+            mean, half = means[m]
+            text = f"{mean:.2f} ± {half:.2f}"
+            cells[m] = f"**{text}**" if np.isclose(mean, best) else text
+        lines.append(f"| {PRETTY[dataset]} | " + " | ".join(cells[m] for m in names) + " |")
+    return "\n".join(lines) if any_row else "_(no results)_"
+
+
+def table_depth_gauges_paired() -> str:
+    """Power minus each baseline at depth, paired over the confirmation seeds.
+
+    The methods share their seeds and their split, so the difference is paired
+    and is judged by the standard declared everywhere else here: the exact
+    sign-flip permutation test, Holm-corrected over these comparisons as their
+    own family, declared separately from the main study's 80.
+    """
+    import math
+
+    import numpy as np
+
+    from karcifann.analysis import holm, paired_permutation_test
+
+    measured = []
+    for dataset in ORDER:
+        paired = {}
+        for row in read(f"depth_gauges_{dataset}"):
+            if row["stage"] != "seed":
+                continue
+            paired.setdefault(row["method"], {})[row["seed"]] = float(row["test"])
+        if "power" not in paired:
+            continue
+        for rival, label in (("gradient descent", "SGD"), ("adam", "Adam")):
+            if rival not in paired:
+                continue
+            seeds = sorted(set(paired["power"]) & set(paired[rival]))
+            if len(seeds) < 2:
+                continue
+            ours = np.array([paired["power"][k] for k in seeds])
+            theirs = np.array([paired[rival][k] for k in seeds])
+            measured.append((dataset, label, 100.0 * (ours - theirs),
+                             float(np.ravel(paired_permutation_test(ours, theirs))[0])))
+    if not measured:
+        return "_(no results)_"
+
+    adjusted = np.ravel(holm([p for _, _, _, p in measured]))
+    n_family = len(measured)
+    lines = [f"| dataset | against | power − baseline (pp) | 95% CI | "
+             f"seeds favouring power | sign-flip Holm ({n_family}) | detected |",
+             "|---|---|---:|---:|---:|---:|---|"]
+    for (dataset, label, diffs, _), p_adj in zip(measured, adjusted):
+        n = diffs.size
+        mean = float(diffs.mean())
+        half = 1.96 * float(diffs.std(ddof=1)) / math.sqrt(n)
+        lines.append(f"| {PRETTY[dataset]} | {label} | {mean:+.2f} | "
+                     f"[{mean - half:+.2f}, {mean + half:+.2f}] | "
+                     f"{int((diffs > 0).sum())}/{n} | {float(p_adj):.4f} | "
+                     f"{'**yes**' if p_adj <= 0.05 else 'no'} |")
+    return "\n".join(lines)
+
+
 def table_cf_residue() -> str:
     """How far Caputo-Fabrizio is from telescoping, in the trained network.
 
@@ -507,7 +597,7 @@ def table_headline() -> str:
     comparisons as the permutation column beside it.  It printed raw p-values
     under a caption promising corrected ones until 2026-09-23, which made the
     table disagree with the paragraph below it -- and is the kind of semantic
-    error that checking numerical containment alone cannot detect.
+    error multiset containment in check_tables.py cannot see.
     """
     import numpy as np
 
@@ -522,7 +612,7 @@ def table_headline() -> str:
     lines = ["| dataset | KarcıFANN − GD (pp) | 95% CI | seeds W/T/L | "
              "perm. Holm (within) | perm. Holm (study-wide) | sign Holm (80) | verdict |",
              "|---|---:|---:|:-:|---:|---:|---:|---|"]
-    wins = not_detected = losses = 0
+    wins = ties = losses = 0
     for dataset in ORDER:
         match = [r for r in rows if r["dataset"] == dataset
                  and {r["method_a"], r["method_b"]} == {"KarciFANN", "gradient descent"}]
@@ -550,21 +640,20 @@ def table_headline() -> str:
         elif significant and diff < 0:
             verdict, losses = "**gradient descent**", losses + 1
         else:
-            verdict, not_detected = "not detected", not_detected + 1
+            verdict, ties = "tie", ties + 1
         lines.append(
             f"| {PRETTY[dataset]} | {diff:+.2f} | "
             f"[{diff - half:+.2f}, {diff + half:+.2f}] | {won}/{tied}/{lost} | "
             f"{within:.4f} | {study:.4f} | {sign:.4f} | {verdict} |")
     lines.append("")
     lines.append(f"**{wins} win{'s' if wins != 1 else ''} for KarcıFANN, "
-                 f"{losses} for gradient descent, {not_detected} non-detections** "
-                 "under the study-wide permutation standard. "
-                 "Non-detection does not establish equivalence.")
+                 f"{losses} for gradient descent, {ties} tie{'s' if ties != 1 else ''}** "
+                 "under the study-wide permutation standard.")
     return "\n".join(lines)
 
 
 def table_evidence() -> str:
-    """How many comparisons clear each standard, with a sample-skew diagnostic.
+    """How many comparisons clear each standard, and how often the assumptions hold.
 
     These counts used to be typed into the prose; one of them ("27 of 80")
     survived a re-run that changed it to 38.  Generating them removes the only
@@ -585,8 +674,8 @@ def table_evidence() -> str:
         f"| **permutation, Holm across the study** (the standard used here) "
         f"| **{count('robust')}** |",
         "",
-        f"Paired-difference samples with `|skew| > 1`: **{skewed} of {total}**. "
-        "This is a diagnostic warning about symmetry, not a formal assumption test.",
+        f"Paired differences with `|skew| > 1`, where the Wilcoxon symmetry "
+        f"assumption fails: **{skewed} of {total}**.",
     ]
     return "\n".join(lines)
 
@@ -1072,6 +1161,122 @@ def table_loss_scaling_drift() -> str:
     return "\n".join(lines)
 
 
+# --------------------------------------------------------------- references
+# Section 11 listed 15 references while the manuscript cited 31: it was typed
+# once and never revisited.  That is the same defect this script exists to
+# remove for tables, so the list is generated from paper/refs.bib, numbered by
+# the manuscript's own citation order.  BibTeX numbers the bibliography by
+# first citation, so scanning the .tex reproduces the printed numbering without
+# reading the .bbl -- which is a build product and absent from a fresh clone.
+
+PAPER = Path("paper")
+
+#: LaTeX spellings that appear in refs.bib, as the characters they stand for.
+ACCENTS = {
+    r"{\i}": "\u0131", r"\i ": "\u0131",
+    r'{\"u}': "\u00fc", r'{\"o}': "\u00f6", r'{\"a}': "\u00e4",
+    r'{\"U}': "\u00dc", r'{\"O}': "\u00d6", r'{\"A}': "\u00c4",
+    r"{\c{s}}": "\u015f", r"{\c{c}}": "\u00e7", r"{\c{S}}": "\u015e",
+    r"{\c{C}}": "\u00c7", r"{\u{g}}": "\u011f", r"{\u{G}}": "\u011e",
+    r"{\'e}": "\u00e9", r"{\'a}": "\u00e1", r"{\`e}": "\u00e8",
+    r"{\v{s}}": "\u0161", r"{\^o}": "\u00f4", r"{\~n}": "\u00f1",
+    "---": "\u2014", "--": "\u2013", r"\&": "&", "~": " ",
+}
+
+
+def _plain(value: str) -> str:
+    """A bib field as readable text: accents resolved, grouping braces gone."""
+    text = " ".join(value.split())
+    for latex, char in ACCENTS.items():
+        text = text.replace(latex, char)
+    return text.replace("{", "").replace("}", "")
+
+
+def _initials(name: str) -> str:
+    r"""`Karc{\i}, Ali` and `Ali Karc{\i}` both become `A. Karci`-style text."""
+    name = _plain(name)
+    if "," in name:
+        family, given = (part.strip() for part in name.split(",", 1))
+    else:
+        parts = name.split()
+        family, given = parts[-1], " ".join(parts[:-1])
+    initials = " ".join(f"{word[0]}." for word in given.split() if word)
+    return f"{initials} {family}".strip()
+
+
+def _bib_entries() -> dict[str, dict]:
+    """Parse refs.bib far enough to format it; it is ours and well-formed."""
+    text = (PAPER / "refs.bib").read_text()
+    entries = {}
+    for match in re.finditer(r"@(\w+)\s*\{\s*([^,]+),(.*?)\n\}", text, re.S):
+        kind, key, body = match.group(1).lower(), match.group(2).strip(), match.group(3)
+        fields = {}
+        for field in re.finditer(r"(\w+)\s*=\s*\{(.*?)\}\s*,?\s*(?=\n\s*\w+\s*=|\s*$)",
+                                 body, re.S):
+            fields[field.group(1).lower()] = field.group(2)
+        fields["__type__"] = kind
+        entries[key] = fields
+    return entries
+
+
+def _citation_order() -> list[str]:
+    """Keys in order of first citation, which is the printed numbering."""
+    tex = re.sub(r"(?<!\\)%.*", "", (PAPER / "karcifann-gauges.tex").read_text())
+    order: list[str] = []
+    for match in re.finditer(r"\\(?:cite|citep|citet|citealp|citeauthor|citeyear)"
+                             r"\*?(?:\[[^]]*\])*\{([^}]*)\}", tex):
+        for key in match.group(1).split(","):
+            key = key.strip()
+            if key and key not in order:
+                order.append(key)
+    return order
+
+
+def _format_reference(entry: dict) -> str:
+    authors = ", ".join(_initials(name)
+                        for name in re.split(r"\s+and\s+", entry["author"]))
+    parts = [authors, f'"{_plain(entry["title"])}"']
+    venue = entry.get("journal") or entry.get("booktitle")
+    if venue:
+        where = f"*{_plain(venue)}*"
+        if entry.get("volume"):
+            where += f" {_plain(entry['volume'])}"
+            if entry.get("number"):
+                where += f"({_plain(entry['number'])})"
+        if entry.get("pages"):
+            where += f":{_plain(entry['pages'])}" if entry.get("volume") \
+                else f", {_plain(entry['pages'])}"
+        parts.append(where)
+    elif entry.get("school"):
+        parts.append(f"PhD thesis, {_plain(entry['school'])}")
+    elif entry.get("publisher"):
+        parts.append(_plain(entry["publisher"]))
+    elif entry.get("howpublished"):
+        parts.append(_plain(entry["howpublished"]))
+    parts.append(_plain(entry["year"]))
+    line = ", ".join(parts) + "."
+    if entry.get("doi"):
+        line += f" doi:{_plain(entry['doi'])}"
+    return line
+
+
+def table_references() -> str | None:
+    """The manuscript's bibliography, numbered as the manuscript numbers it.
+
+    paper/ is working material and is not published, so in the release -- and
+    in any clone of it -- refs.bib is not there to read.  Returning None leaves
+    the block exactly as it stands rather than emptying it, which keeps
+    --check green on a tree that has the list but not the source it came from.
+    """
+    if not (PAPER / "refs.bib").exists():
+        return None
+    entries = _bib_entries()
+    lines = []
+    for number, key in enumerate(_citation_order(), 1):
+        lines.append(f"{number}. {_format_reference(entries[key])}")
+    return "\n".join(lines)
+
+
 TABLES = {
     "headline": table_headline,
     "fod-sweep": table_fod_sweep,
@@ -1094,8 +1299,11 @@ TABLES = {
     "ranks": table_ranks,
     "headroom": table_headroom,
     "headroom-optimiser": table_headroom_optimiser,
+    "depth-gauges": table_depth_gauges,
+    "depth-gauges-paired": table_depth_gauges_paired,
     "split-robustness": table_split_robustness,
     "multiseed-tuning": table_multiseed_tuning,
+    "references": table_references,
     "headroom-splits": table_headroom_splits,
     "headroom-selection": table_headroom_selection,
     "split-stability": table_split_stability,
@@ -1118,7 +1326,11 @@ def render(text: str) -> tuple[str, list[str]]:
     def substitute(match):
         name = match.group(1)
         seen.append(name)
-        body = TABLES[name]() if name in TABLES else match.group(2).strip("\n")
+        # A producer may return None: it has nothing to regenerate from in
+        # this tree, so whatever the block already holds is kept.
+        body = TABLES[name]() if name in TABLES else None
+        if body is None:
+            body = match.group(2).strip("\n")
         return f"<!-- table:{name} -->\n{body}\n<!-- /table:{name} -->"
 
     # The content group may be empty, so an unmarked placeholder still matches.
