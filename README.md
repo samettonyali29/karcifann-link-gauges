@@ -21,9 +21,9 @@ and the current value of each individual weight `W`.
 |---|---|
 | `karcifann/` | the library: the derivative, the gauge family, the optimisers, the network, the statistics and the grid-edge audit |
 | `experiments/` | the scripts that produce every result; `run_all.sh` reproduces the lot |
-| `results/` | 102 CSVs — every number in this file and in the paper is generated from these |
-| `figures/` | 104 files, each figure as both PDF and SVG |
-| `tests/` | 563 tests, including the enforcement checks described in §8.0b and §9 |
+| `results/` | 113 CSVs — every number in this file and in the paper is generated from these |
+| `figures/` | 108 files, each figure as both PDF and SVG |
+| `tests/` | 620 tests, including the enforcement checks described in §8.0b and §9 |
 | `paper/` | the manuscript (LaTeX source, bibliography and compiled PDF) |
 
 **Reproducing everything.** Install the dependencies in `requirements.txt`,
@@ -1729,7 +1729,7 @@ actually run.
 ## 9. Tests
 
 ```bash
-python3 -m pytest -q                    # 619 tests, ~250 s
+python3 -m pytest -q                    # 620 tests, ~250 s
 python3 -m pytest -q -m "not network"   # skip the dataset downloads
 python3 -m pytest -q -m results         # audit the committed results/ only
 ```
@@ -1848,18 +1848,39 @@ Two caveats worth stating plainly:
 
 ## 11. References
 
-1. A. Karcı, "A new approach for fractional order derivative and its applications", *Universal J. Engineering Science* 1(3):110–117, 2013.
-2. A. Karcı, "Kesir dereceli türevin yeni yaklaşımının özellikleri", *J. Fac. Eng. Arch. Gazi Univ.* 30(3), 2015.
-3. A. Karcı, "Chain rule for fractional order derivatives", *Science Innovation* 3(6):63–67, 2015.
-4. A. Karcı, "Properties of fractional order derivatives for groups of relations/functions", *Universal J. Engineering Science* 3(3):39–45, 2015.
-5. A. Karcı, "Properties of Karcı's fractional order derivative", *Universal J. Engineering Science* 7(2):32–38, 2019.
-6. M. Karakurt, E. A. Oymak, H. Hark, M. C. Erdoğan, A. Karcı, "Karcı sinir ağlarının uygulaması ve performans analizi", *J. Computer Science* 7(2):68–80, 2022.
-7. M. Karakurt, H. Saygılı, A. Karcı, "Comparison of activation functions in the KarcıFANN method", IDAP'24, IEEE, 2024.
-8. H. Saygılı, M. Karakurt, A. Karcı, "Comparison of loss functions in the KarcıFANN method", IDAP'24, IEEE, 2024.
-9. M. Karakurt, H. Saygılı, A. Karcı, "Karcı fractional artificial neural networks (KarcıFANN): a new artificial neural networks model without learning rate and its problems", *Turk. J. Elec. Eng. & Comp. Sci.* 33(3):248–263, 2025.
-10. H. Saygılı, M. Karakurt, A. Karcı, "Karcı fractional order neural network (KarcıFANN): solving learning rate, overfitting and underfitting problems", *J. Fac. Eng. Arch. Gazi Univ.* 40(4):2499–2514, 2025.
-11. M. Karakurt, "YSA'larda kesir dereceli türev kullanımının öğrenmeye etkisi", *J. Computer Science* 10(2):153–178, 2025.
-12. M. Karakurt, "KarcıFANN yönteminde ağırlık sönümlemenin etkisi", *J. Computer Science* 10(2):201–216, 2025.
-13. M. Karakurt, H. Saygılı, A. Karcı, "KarcıFANN makine öğrenmesi yönteminin matematiksel modeli", *Fırat Univ. J. Eng. Sci.* 38(1):47–56, 2026.
-14. M. Caputo, M. Fabrizio, "A new definition of fractional derivative without singular kernel", *Progr. Fract. Differ. Appl.* 1(2):73–85, 2015.
-15. J. Losada, J. J. Nieto, "Properties of a new fractional derivative without singular kernel", *Progr. Fract. Differ. Appl.* 1(2):87–92, 2015.
+Generated from `paper/refs.bib`, numbered as the manuscript numbers its bibliography.
+
+<!-- table:references -->
+1. M. Karakurt, H. Saygılı, A. Karcı, "Karcı fractional artificial neural networks (KarcıFANN): a new artificial neural networks model without learning rate and its problems", *Turkish Journal of Electrical Engineering and Computer Sciences* 33(3):248–263, 2025. doi:10.55730/1300-0632.4125
+2. H. Saygılı, M. Karakurt, A. Karcı, "Karcı fractional order neural network (KarcıFANN): solving learning rate, overfitting and underfitting problems", *Journal of the Faculty of Engineering and Architecture of Gazi University* 40(4):2499–2514, 2025. doi:10.17341/gazimmfd.1558859
+3. A. Karcı, "Chain Rule for Fractional Order Derivatives", *Science Innovation* 3(6):63–67, 2015. doi:10.11648/j.si.20150306.11
+4. D. M. Sincov, "Über eine Funktionalgleichung", *Archiv der Mathematik und Physik* 6:216–217, 1903.
+5. J. Aczél, "Lectures on Functional Equations and Their Applications", Academic Press, 1966.
+6. A. Karcı, "A New Approach for Fractional Order Derivative and Its Applications", *Universal Journal of Engineering Science* 1(3):110–117, 2013. doi:10.13189/ujes.2013.010306
+7. A. Karcı, "Properties of Fractional Order Derivatives for Groups of Relations/Functions", *Universal Journal of Engineering Science* 3(3):39–45, 2015. doi:10.13189/ujes.2015.030301
+8. A. Karcı, "Properties of Karcı's Fractional Order Derivative", *Universal Journal of Engineering Science* 7(2):32–38, 2019. doi:10.13189/ujes.2019.070202
+9. A. Karcı, "Fractional Order Integration: A New Perspective based on Karcı's Fractional Order Derivative", *Anatolian Journal of Computer Sciences* 6(2):102–105, 2021.
+10. M. Karakurt, H. Saygılı, A. Karcı, "Comparison of Activation Functions in the KarcıFANN Method", *8th International Artificial Intelligence and Data Processing Symposium (IDAP)*, 2024. doi:10.1109/IDAP64064.2024.10711149
+11. H. Saygılı, M. Karakurt, A. Karcı, "Comparison of Loss Functions in the KarcıFANN Method", *8th International Artificial Intelligence and Data Processing Symposium (IDAP)*, 2024. doi:10.1109/IDAP64064.2024.10710967
+12. M. Karakurt, H. Saygılı, A. Karcı, "The Effect of Weight Decay in the KarcıFANN Method", *Journal of Computer Science (Anatolian Science)* 10(2):201–216, 2025. doi:10.53070/bbd.1809030
+13. M. Karakurt, H. Saygılı, A. Karcı, "The Effect of Using Fractional-Order Derivatives on Learning in Artificial Neural Networks", *Journal of Computer Science (Anatolian Science)* 10(2):153–178, 2025. doi:10.53070/bbd.1808790
+14. M. Karakurt, H. Saygılı, A. Karcı, "Mathematical Model of the KarcıFANN Machine Learning Method", *Fırat University Journal of Engineering Science* 38(1):47–56, 2026. doi:10.35234/fumbd.1672351
+15. M. Karakurt, E. A. Oymak, H. Hark, M. C. Erdoğan, A. Karcı, "Application and Performance Analysis of Karcı Neural Network", *Journal of Computer Science (Anatolian Science)* 7(2):68–80, 2022. doi:10.53070/bbd.1194017
+16. M. Caputo, "Linear Models of Dissipation whose Q is almost Frequency Independent—II", *Geophysical Journal International* 13(5):529–539, 1967. doi:10.1111/j.1365-246X.1967.tb02303.x
+17. M. Caputo, M. Fabrizio, "A New Definition of Fractional Derivative without Singular Kernel", *Progress in Fractional Differentiation and Applications* 1(2):73–85, 2015.
+18. D. E. Rumelhart, G. E. Hinton, R. J. Williams, "Learning Representations by Back-Propagating Errors", *Nature* 323:533–536, 1986. doi:10.1038/323533a0
+19. A. Beck, M. Teboulle, "Mirror descent and nonlinear projected subgradient methods for convex optimization", *Operations Research Letters* 31(3):167–175, 2003. doi:10.1016/S0167-6377(02)00231-6
+20. D. Dua, C. Graff, "UCI Machine Learning Repository", University of California, Irvine, School of Information and Computer Sciences, 2019.
+21. Y. LeCun, L. Bottou, Y. Bengio, P. Haffner, "Gradient-Based Learning Applied to Document Recognition", *Proceedings of the IEEE* 86(11):2278–2324, 1998. doi:10.1109/5.726791
+22. X. Glorot, Y. Bengio, "Understanding the Difficulty of Training Deep Feedforward Neural Networks", *Proceedings of Machine Learning Research* 9:249–256, 2010.
+23. J. Demšar, "Statistical Comparisons of Classifiers over Multiple Data Sets", *Journal of Machine Learning Research* 7:1–30, 2006.
+24. P. Nemenyi, "Distribution-Free Multiple Comparisons", PhD thesis, Princeton University, 1963.
+25. S. Holm, "A Simple Sequentially Rejective Multiple Test Procedure", *Scandinavian Journal of Statistics* 6(2):65–70, 1979.
+26. A. Defazio, K. Mishchenko, "Learning-Rate-Free Learning by D-Adaptation", *Proceedings of the 40th International Conference on Machine Learning* 202:7449–7479, 2023.
+27. K. Mishchenko, A. Defazio, "Prodigy: An Expeditiously Adaptive Parameter-Free Learner", *Proceedings of the 41st International Conference on Machine Learning* 235:35779–35804, 2024.
+28. J. Duchi, E. Hazan, Y. Singer, "Adaptive Subgradient Methods for Online Learning and Stochastic Optimization", *Journal of Machine Learning Research* 12:2121–2159, 2011.
+29. D. P. Kingma, J. Ba, "Adam: A Method for Stochastic Optimization", *International Conference on Learning Representations (ICLR)*, 2015.
+30. G. Yencak, E. Sefer, "SGD with partial Hessian for deep recommendation system optimization", *2023 IEEE International Conference on Data Mining Workshops (ICDMW)*, 181–187, 2023. doi:10.1109/ICDMW60847.2023.00030
+31. N. Loizou, S. Vaswani, I. Hadj Laradji, S. Lacoste-Julien, "Stochastic Polyak step-size for SGD: an adaptive learning rate for fast convergence", *Proceedings of the 24th International Conference on Artificial Intelligence and Statistics* 130:1306–1314, 2021.
+32. A. Orvieto, S. Lacoste-Julien, N. Loizou, "Dynamics of SGD with stochastic Polyak stepsizes: truly adaptive variants and convergence to exact solution", *Advances in Neural Information Processing Systems 35*, 26943–26954, 2022.
+<!-- /table:references -->
