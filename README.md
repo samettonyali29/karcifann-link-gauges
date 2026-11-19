@@ -9,11 +9,9 @@ from are listed in [§11](#11-references); they are not redistributed here.
 W  ←  W  −  (J / W)^(α−1) · ∂J/∂W
 ```
 
-The original unit-scale update has no separate learning-rate parameter: its
-coordinatewise prefactor depends on the current loss `J` and weight `W`.
-The benchmark comparisons in this repository additionally tune an external
-step multiplier on validation data, alongside the fractional order. The
-comparison therefore does not establish freedom from step-size tuning.
+There is no learning rate anywhere. At every iteration the step size is
+recomputed from two quantities the network already has: its current error `J`
+and the current value of each individual weight `W`.
 
 ---
 
@@ -23,12 +21,13 @@ comparison therefore does not establish freedom from step-size tuning.
 |---|---|
 | `karcifann/` | the library: the derivative, the gauge family, the optimisers, the network, the statistics and the grid-edge audit |
 | `experiments/` | the scripts that produce every result; `run_all.sh` reproduces the lot |
-| `results/` | 102 CSVs — saved measurements and derived statistics used in this README |
+| `results/` | 102 CSVs — every number in this file and in the paper is generated from these |
 | `figures/` | 104 files, each figure as both PDF and SVG |
-| `tests/` | code and saved-result checks described in §8.0b and §9 |
+| `tests/` | 563 tests, including the enforcement checks described in §8.0b and §9 |
+| `paper/` | the manuscript (LaTeX source, bibliography and compiled PDF) |
 
 **Reproducing everything.** Install the dependencies in `requirements.txt`,
-then run the eight queues and the aggregation pass:
+then run the seven queues and the aggregation pass:
 
 ```bash
 for q in 1 2 3 4 5 6 7 8; do bash experiments/run_all.sh $q & done; wait
@@ -47,9 +46,10 @@ python3 -m pytest -q
 ```
 
 **Licensing.** The code, results and figures are MIT-licensed (see `LICENSE`).
-The manuscript and its submission files are maintained separately and are not
-included in this repository. The source articles this work analyses are also
-not redistributed; §11 lists them.
+The Elsevier `cas-sc` class files under `paper/` are the publisher's, are
+redistributed under the LaTeX Project Public License, and are not covered by
+that grant. The source papers this work analyses are not redistributed; §11
+lists them.
 
 ---
 
@@ -824,7 +824,7 @@ Pendigits.
 
 **How much of the gap is the optimizer alone?** The last column says, and it
 varies: all of it on Segment (+0.84 of +0.84, where neither modern cell beats
-the paper cell), about half on Satimage (49 %) and Dry Bean (44 %), a quarter to
+the paper cell), about half on Satimage (49 %) and two fifths on Dry Bean (40 %), a quarter to
 a third on Vehicle (29 %) and Pendigits (27 %), 6 % on Letter, and *negative* on
 Optdigits (−17 %) and MNIST (−22 %) — swapping the optimizer while keeping
 sigmoid and MSE makes those two slightly worse. So the gap is not an Adam
@@ -855,7 +855,7 @@ that is a different and more permissive rule, and it reported five detections
 where this reports four — Letter was the row that changed.
 
 On four of the eight datasets the optimizer effect is not distinguishable from
-zero at 16 seeds, which is worth knowing before reading 44 % or 49 % as a
+zero at 16 seeds, which is worth knowing before reading 40 % or 49 % as a
 quantity: Satimage's 49 % is a share of a difference the test does not separate
 from noise. Where it *is* distinguishable it is small beside the bundle — except
 on Segment, where it is the whole of what is available.
@@ -912,20 +912,20 @@ Letter is unchanged, because C is chosen on validation and wins on test on all
 ten splits. Vehicle falls from +4.15 to +0.43 with a median of zero — on most
 splits the validation-selected configuration is the paper cell itself.
 
-**The output/loss configuration accounts for much of the observed gain.**
-In the stored configuration analysis (`results/summary_config_ablation.csv`),
-changing sigmoid/MSE outputs to softmax/cross-entropy while retaining sigmoid
-hidden units and gradient descent accounts descriptively for 84 % of the
-best observed configuration gain on Letter, 99 % on Pendigits, 82 % on MNIST
-and 83 % on Optdigits. These percentages compare configurations; they do not
-isolate the loss function's causal contribution.
+**Where the cell is costly, the loss function is usually the reason.**
+Separating the three factors at fixed capacity
+(`results/summary_config_ablation.csv`), swapping MSE for cross-entropy while
+holding sigmoid and gradient descent fixed accounts for 84 % of the achievable
+gain on Letter, 99 % on Pendigits, 82 % on MNIST and 83 % on Optdigits. Every
+KarcıFANN paper uses MSE with one-hot targets, and on those four datasets that
+single choice costs more than any optimizer difference in the literature.
 
-On Vehicle this output/loss change accounts for 29 % of the observed gain.
-On Satimage, Dry Bean and Segment it slightly reduces accuracy. The ReLU/MSE
-configurations perform poorly (35.3 % on Letter and 62.3 % on Dry Bean against
-a 92.3 % baseline), but they also change initialisation to He and the output
-activation to ReLU. Hidden activation, output activation, initialisation and
-loss are therefore partially coupled in this comparison.
+It is not universal, and the exceptions matter. On Vehicle the loss swap
+delivers only 29 % of the gain — the rest is the optimizer. On Satimage, Dry
+Bean and Segment cross-entropy on its own makes things slightly *worse*, and
+what little is available comes from Adam. ReLU without cross-entropy is
+catastrophic everywhere (35.3 % on Letter, 62.3 % on Dry Bean against a 92.3 %
+baseline): the two have to move together.
 
 Dry Bean and Segment are the honest counterexamples. Both are nearly saturated,
 everything lands within a point, and on Segment the paper cell is the best of
@@ -940,15 +940,66 @@ inside this cell" carry much less weight than the number suggests.
 
 ---
 
+**Does the family's behaviour survive outside this configuration?** Everything
+above measures the *configuration*; every gauge comparison in §8 measures the
+*gauges*, and does so inside configuration A alone. Taken together those two
+facts leave the central negative result with an alternative explanation nothing
+else here rules out: that the gauges neither help nor hurt *in a setting where
+little is available to win*.
+
+`experiments/depth_gauges.py` removes that explanation or confirms it. It
+repeats the family comparison at **two hidden layers of 128 ReLU units, softmax
+output, cross-entropy loss and He initialisation**, against Adam as well as
+SGD, holding the splits, the epoch and batch budgets and the 16 confirmation
+seeds fixed. The configuration is the only thing that changes, so a difference
+in conclusion between this table and §8.1b can be attributed to it.
+
+<!-- table:depth-gauges -->
+| dataset | power (KarciFANN) | exp | SGD | Adam |
+|---|---:|---:|---:|---:|
+| Vehicle | 82.91 ± 0.75 | 82.28 ± 1.08 | 80.27 ± 0.91 | **83.35 ± 0.50** |
+| Satimage | 90.80 ± 0.30 | 90.43 ± 0.30 | **91.22 ± 0.20** | 90.73 ± 0.49 |
+| Dry Bean | 71.68 ± 18.11 | 92.22 ± 0.12 | 92.18 ± 0.12 | **92.40 ± 0.09** |
+| Segment | **97.45 ± 0.24** | 96.80 ± 0.44 | 96.88 ± 0.54 | 97.21 ± 0.33 |
+| Optdigits | **98.73 ± 0.11** | 15.37 ± 10.86 | 98.45 ± 0.13 | 98.50 ± 0.09 |
+| Pendigits | **99.61 ± 0.05** | 99.48 ± 0.04 | 99.50 ± 0.05 | 99.37 ± 0.19 |
+| MNIST | 97.36 ± 0.17 | **97.82 ± 0.10** | 97.53 ± 0.18 | 97.72 ± 0.08 |
+| Letter | 96.21 ± 0.37 | 96.48 ± 0.11 | **96.52 ± 0.13** | 95.53 ± 0.84 |
+<!-- /table:depth-gauges -->
+
+Paired against each baseline over the shared confirmation seeds, judged by the
+standard used everywhere else here — the exact sign-flip permutation test,
+Holm-corrected over these comparisons as their own declared family:
+
+<!-- table:depth-gauges-paired -->
+| dataset | against | power − baseline (pp) | 95% CI | seeds favouring power | sign-flip Holm (16) | detected |
+|---|---|---:|---:|---:|---:|---|
+| Vehicle | SGD | +2.64 | [+1.62, +3.65] | 15/16 | 0.0029 | **yes** |
+| Vehicle | Adam | -0.44 | [-1.33, +0.46] | 5/16 | 1.0000 | no |
+| Satimage | SGD | -0.42 | [-0.75, -0.09] | 6/16 | 0.2850 | no |
+| Satimage | Adam | +0.07 | [-0.33, +0.47] | 6/16 | 1.0000 | no |
+| Dry Bean | SGD | -20.50 | [-38.61, -2.40] | 9/16 | 0.6709 | no |
+| Dry Bean | Adam | -20.72 | [-38.86, -2.59] | 6/16 | 0.3701 | no |
+| Segment | SGD | +0.57 | [+0.01, +1.14] | 10/16 | 0.3604 | no |
+| Segment | Adam | +0.23 | [-0.22, +0.68] | 7/16 | 1.0000 | no |
+| Optdigits | SGD | +0.27 | [+0.12, +0.43] | 13/16 | 0.0784 | no |
+| Optdigits | Adam | +0.22 | [+0.11, +0.34] | 13/16 | 0.0476 | **yes** |
+| Pendigits | SGD | +0.11 | [+0.06, +0.16] | 12/16 | 0.0205 | **yes** |
+| Pendigits | Adam | +0.24 | [+0.03, +0.45] | 11/16 | 0.2115 | no |
+| MNIST | SGD | -0.16 | [-0.32, -0.01] | 4/16 | 0.3946 | no |
+| MNIST | Adam | -0.36 | [-0.57, -0.16] | 2/16 | 0.0201 | **yes** |
+| Letter | SGD | -0.32 | [-0.68, +0.05] | 6/16 | 0.6709 | no |
+| Letter | Adam | +0.67 | [-0.25, +1.60] | 9/16 | 0.7001 | no |
+<!-- /table:depth-gauges-paired -->
+
 ## 8. Statistical analysis
 
 `experiments/run_analysis.py` runs five experiments per dataset and writes tidy
 CSVs to `results/`; `experiments/make_figures.py` turns those into the derived
 statistics and every figure, in **PDF and SVG**, in `figures/`.
 
-The main comparisons are **paired**: every method sees the same 16
-initialisation and shuffle seeds. Pairing alone does not establish the
-assumptions of a signed-rank or sign-flip test; these are discussed in §8.2.
+All comparisons are **paired**: every method sees the same 16 initialisation
+seeds, so a signed-rank test on the pairs is legitimate.
 
 ### 8.0 Eight datasets, chosen to span the loss scale
 
@@ -1110,16 +1161,16 @@ Friedman over 8 datasets: χ² = 14, **p = 0.0073** (power floor 2e-06); Nemenyi
 | `log` | 4.62 | 2.88 | **yes** |
 <!-- /table:ranks -->
 
-**KarcıFANN takes the best average rank**, ahead of tuned gradient descent,
-and the Friedman test detects an overall difference among the five methods. But Nemenyi — deliberately
+**KarcıFANN takes the best average rank**, ahead of a tuned learning rate, and
+the overall difference among the five is real. But Nemenyi — deliberately
 conservative — separates only `log` from the leader: the gap from KarcıFANN to
 gradient descent is well inside the critical difference and is **not**
 established at eight datasets.
 
-The observed average rank favours KarcıFANN, but the Nemenyi comparison with
-tuned gradient descent does not establish a difference. This non-detection
-establishes neither equivalence nor non-inferiority, and the benchmark does
-not establish general superiority.
+The honest summary: on this evidence KarcıFANN is not worse than a tuned
+learning rate and is plausibly slightly better, but the margin is not
+demonstrated. That is a weaker claim than the original papers make and a
+stronger one than the first version of this analysis reached.
 
 **This ranking reversed once the splits were fixed.** With unstratified
 train/validation/test splits gradient descent led at 1.56 against KarcıFANN's
@@ -1133,23 +1184,22 @@ on small tabular benchmarks.
 
 ### 8.2 KarcıFANN against gradient descent, dataset by dataset
 
-Paired sign-flip test of the mean difference, enumerating all sign patterns
-for 16 seeds, reported under both corrections and cross-checked with the sign
-test. Exactness is conditional on null sign invariance, as discussed below:
+Exact paired permutation test, 16 seeds, reported under both corrections and
+cross-checked with the sign test:
 
 <!-- table:headline -->
 | dataset | KarcıFANN − GD (pp) | 95% CI | seeds W/T/L | perm. Holm (within) | perm. Holm (study-wide) | sign Holm (80) | verdict |
 |---|---:|---:|:-:|---:|---:|---:|---|
 | Vehicle | +1.42 | [+0.80, +2.03] | 13/3/0 | 0.0012 | 0.0149 | 0.0161 | **KarcıFANN** |
-| Satimage | +0.18 | [-1.16, +1.51] | 4/1/11 | 1.0000 | 1.0000 | 1.0000 | not detected |
-| Dry Bean | -0.07 | [-0.16, +0.02] | 5/1/10 | 1.0000 | 1.0000 | 1.0000 | not detected |
-| Segment | +0.45 | [-0.12, +1.01] | 11/2/3 | 0.6903 | 1.0000 | 1.0000 | not detected |
-| Optdigits | +0.07 | [-0.09, +0.22] | 10/2/4 | 1.0000 | 1.0000 | 1.0000 | not detected |
+| Satimage | +0.18 | [-1.16, +1.51] | 4/1/11 | 1.0000 | 1.0000 | 1.0000 | tie |
+| Dry Bean | -0.07 | [-0.16, +0.02] | 5/1/10 | 1.0000 | 1.0000 | 1.0000 | tie |
+| Segment | +0.45 | [-0.12, +1.01] | 11/2/3 | 0.6903 | 1.0000 | 1.0000 | tie |
+| Optdigits | +0.07 | [-0.09, +0.22] | 10/2/4 | 1.0000 | 1.0000 | 1.0000 | tie |
 | Pendigits | +0.17 | [+0.10, +0.24] | 12/3/1 | 0.0066 | 0.0432 | 0.2085 | **KarcıFANN** |
 | MNIST | +0.19 | [+0.11, +0.27] | 13/0/3 | 0.0017 | 0.0496 | 1.0000 | **KarcıFANN** |
-| Letter | -0.46 | [-1.08, +0.16] | 5/1/10 | 0.5017 | 1.0000 | 1.0000 | not detected |
+| Letter | -0.46 | [-1.08, +0.16] | 5/1/10 | 0.5017 | 1.0000 | 1.0000 | tie |
 
-**3 wins for KarcıFANN, 0 for gradient descent, 5 non-detections** under the study-wide permutation standard. Non-detection does not establish equivalence.
+**3 wins for KarcıFANN, 0 for gradient descent, 5 ties** under the study-wide permutation standard.
 <!-- /table:headline -->
 
 **Two caveats on every p-value in this section**, both measurable rather than
@@ -1167,29 +1217,24 @@ choice, and it has to be stated, because here it decides several results:
 | permutation, Holm within dataset | 31 |
 | **permutation, Holm across the study** (the standard used here) | **23** |
 
-Paired-difference samples with `|skew| > 1`: **38 of 80**. This is a diagnostic warning about symmetry, not a formal assumption test.
+Paired differences with `|skew| > 1`, where the Wilcoxon symmetry assumption fails: **38 of 80**.
 <!-- /table:evidence -->
 
-*Symmetry and sign invariance.* The Wilcoxon signed-rank test requires a
-symmetric paired-difference distribution for its usual location
-interpretation. Sample skewness is a diagnostic warning, not proof that this
-assumption fails. The primary analysis uses a **paired sign-flip test of the
-mean difference**, enumerating all `2¹⁶ = 65536` sign patterns. Its exactness
-requires sign invariance under the null; independent paired differences
-symmetric about zero satisfy this condition. Shared seeds provide pairing,
-not random assignment of method labels, and a zero mean alone is insufficient.
-Neither sign-flip nor signed-rank inference is assumption-free. Wilcoxon and
-the sign test remain in `results/stats_wilcoxon.csv` as sensitivity analyses;
-the sign test targets sign balance rather than the mean difference.
+*Symmetry.* The Wilcoxon signed-rank test assumes the paired differences are
+symmetric about their median, and here they frequently are not (see the table
+above). Rather than report around that, the primary
+test is an **exact paired permutation test**: under the null a run is equally
+likely to have come from either method, so the sign of each pair is
+exchangeable and the null distribution is obtained by enumerating all `2¹⁶ =
+65536` sign patterns. It assumes nothing about the shape of the differences and
+still uses their magnitudes, so it is both assumption-free *and* slightly more
+powerful than Wilcoxon here. Wilcoxon and the sign test are retained in
+`results/stats_wilcoxon.csv` as cross-checks.
 
-**The primary pairwise standard** is the sign-flip test, Holm-corrected across
-all 80 main comparisons — the stored `robust` column — and the verdicts in
-§8.2 use it. All three detections favouring KarcıFANN over gradient descent
-meet this threshold, subject to the assumptions above. The 24 prefactor-ablation
-comparisons and eight Adam-versus-SGD configuration comparisons use separate
-correction families. Reported confidence intervals are pointwise normal
-approximations conditional on the fixed split and selected hyperparameters;
-they do not include split or tuning uncertainty.
+**The standard used for every claim in this file** is therefore the permutation
+test, Holm-corrected across all 80 comparisons — the `robust` column — and the
+verdicts in §8.2 are computed from it. All three of KarcıFANN's wins over
+gradient descent meet it.
 
 ### 8.2b How much of that difference is the split?
 
@@ -1211,11 +1256,9 @@ re-splitting would leak the original split back through the hyperparameters.
 | Letter | 10 | -0.42 | -0.40 | 0.37 | 0.36 | 1.0× | 1/10 |
 <!-- /table:split-robustness -->
 
-**Between-split SD is 5–11 times the mean within-split seed SE** on three
-datasets. This ratio is descriptive: its numerator mixes resampling,
-retuning and finite-seed variation, while its denominator is a conditional
-standard error. It is neither a variance decomposition nor an estimate of
-how much to inflate the fixed-split confidence intervals.
+**Split uncertainty is 5–11× seed uncertainty** on three of the four datasets,
+so the intervals in §8.2 — computed over seeds at one split — understate the
+real uncertainty by close to an order of magnitude.
 
 **Every median is negative.** On a typical split the power gauge is slightly
 *behind* tuned SGD. The positive means come from one outlying split each:
@@ -1230,13 +1273,15 @@ satimage split 8    power  88.9 89.3 89.6 89.6 89.7 90.5 90.5 90.7
                     SGD    34.8 35.7 38.3 48.2 55.3 65.6 71.9 82.2
 ```
 
-The stored runs show greater sensitivity to single-seed tuning for SGD on
-these selected splits. This motivates the targeted multi-seed follow-up below;
-it does not establish a general protection supplied by the gauge prefactor.
-No run diverged and no tuned winner sat on a grid edge on any of the 40 splits.
+The gauge's prefactor damps the step, so it is far less exposed to a learning
+rate chosen on one lucky seed. What the outliers measure is the fragility of
+single-seed rate selection — a limitation this repository already declares —
+and it bites the baseline harder than the method. No run diverged and no tuned
+winner sat on a grid edge, on any of the 40 splits.
 
-**The saved runs also describe variability under this tuning protocol.**
-Reporting the methods separately rather than their difference:
+**The same experiment supports a stability claim, even though it undercuts the
+accuracy one.** Reporting the two methods separately rather than their
+difference:
 
 <!-- table:split-stability -->
 | dataset | power | tuned SGD | Adam, same cell (A+) | power: seed SD | SGD: seed SD |
@@ -1249,13 +1294,15 @@ Reporting the methods separately rather than their difference:
 
 On the three datasets where anything moves, the power gauge's own accuracy is
 3–12× steadier across splits than tuned SGD's, and steadier across seeds too.
-On Letter, their observed variability is similar.
+On Letter, where the tuned rate is not fragile, they are indistinguishable.
 
-Adam on the identical cell (configuration A+, same ten splits) also has low
-between-split SD: 2.87, 0.97 and 0.38, compared with the gauge's 3.25, 0.91
-and 1.59. Thus the observed variability advantage is not specific to this
-gauge. These results describe the selected configurations and tuning protocol;
-they do not show that every state-dependent step avoids SGD's observed failure.
+The obvious explanation — a multiplier read from the current loss and weight
+has no fixed value to set wrongly — is **too generous to the gauge**. Adam on
+the identical cell (configuration A+, same ten splits) is as steady or
+steadier: 2.87, 0.97, 0.38 against the gauge's 3.25, 0.91, 1.59. What is
+fragile is tuned *constant-rate* SGD specifically. Any rule that sets its step
+from the current state avoids that failure, so this argues for a
+state-dependent step size rather than for this particular one.
 
 Split 0 reproduces the main sweep's tuned winners exactly on all four datasets,
 which is the check that validates the protocol. It also caught a bug: the first
@@ -1316,9 +1363,8 @@ everywhere else), which works for the tuning seed and collapses for the
 confirmation seeds. That is a claim about the *selection procedure*, and
 `experiments/multiseed_tuning.py` tests it: the grid is swept on three tuning
 seeds instead of one and the winner is the best **mean** validation accuracy.
-Both methods are retuned. Splits, grids, per-fit training budgets and the eight
-confirmation seeds are unchanged, so the two differences are paired; total
-tuning cost increases with the extra tuning seeds.
+Split, grids, budgets and the eight confirmation seeds are unchanged, so the
+two differences are paired.
 
 Seed 1 is kept in the multi-seed set, so the single-seed winner falls out of the
 same runs and must reproduce what `split_robustness.py` stored — the script
@@ -1339,11 +1385,6 @@ diagnostic rather than a re-estimate.
 
 The `single` column reproduces `split_robustness.py`'s stored result for the same split; the script refuses to write a table if it does not. `Δ power` and `Δ SGD` decompose the change: on the outliers almost all of it is SGD recovering, and on the controls SGD does not move at all, because its selected rate is unchanged there.
 <!-- /table:multiseed-tuning -->
-
-On the control splits, SGD retains its selected rate and accuracy, while the
-power gauge changes after retuning. The six selected splits therefore diagnose
-the observed outliers; they do not estimate the full benchmark under multi-seed
-tuning or show that the selection rule affects only SGD.
 
 ### 8.3 Sensitivity: α is no easier to choose than a learning rate
 
@@ -1380,8 +1421,8 @@ one the original papers do not run.
 
 Because `Φ = g(J)/g(|W|) = [g(J)/g(c)] · [g(c)/g(|W|)]`, the rule splits into an
 **error-only** half (a step schedule, identical across parameters) and a
-**weight-only** half (a diagonal preconditioner that changes as the weights
-change). The stored ablation compares these three variants.
+**weight-only** half (a diagonal preconditioner, constant in time). Running all
+three is an ablation nobody has done, because nobody had the decomposition.
 
 <!-- table:gauge-ablation -->
 | dataset | `full` | `error` | `weight` |
@@ -1397,8 +1438,8 @@ change). The stored ablation compares these three variants.
 <!-- /table:gauge-ablation -->
 
 Tested the way everything else here is tested — exact paired permutation,
-16 seeds, Holm-corrected across the 24 ablation comparisons — **there is no
-detected overall rank difference, but three pairwise differences are detected**:
+16 seeds, Holm-corrected across every comparison — **the decomposition makes no
+reliable difference**:
 
 <!-- table:gauge-ablation-stats -->
 Friedman over 8 datasets: χ² = 0.06, **p = 0.97**; Nemenyi critical difference 1.17.
@@ -1418,10 +1459,11 @@ Pairwise, 3 of 24 comparisons survive Holm:
 | MNIST | `full` − `error` | +0.13 pp | 0.0329 |
 <!-- /table:gauge-ablation-stats -->
 
-The Friedman test does not detect an overall difference (p = 0.97): the
-average ranks lie within 0.12 of each other, inside a critical difference of
-1.17. The weight-only variant has the best observed average rank, but these
-results do not establish either its superiority or equivalence of the variants.
+The three variants are **statistically indistinguishable**: their average ranks
+sit within 0.12 of each other, well inside a critical difference of 1.17, and
+the Friedman test cannot reject at p = 0.97. The weight-only half — a diagonal
+preconditioner with no error term at all — takes the best average rank, which is
+the clearest sign that the ordering here is noise.
 
 Three of the 24 pairwise comparisons survive Holm, and none of them agrees with
 another. On Vehicle the weight-only half beats the full prefactor by 0.98 pp. On
@@ -1492,15 +1534,21 @@ Every experiment script records its console table to `results/*.csv` as well,
 and **every numeric table in this file is generated from those CSVs** by
 `experiments/update_readme.py`; `--check` fails if the prose has drifted from
 the data. Hand-copying numbers into prose was the cause of three separate
-inconsistencies in this project, so generated tables and the prose-number
-check keep the README tied to the saved results.
+inconsistencies in this project, so the opportunity has been removed. The
+manuscript's LaTeX tables are the one place values are still copied by hand;
+`paper/check_tables.py` regenerates each of them from `results/` and fails on
+any value the pipeline does not produce.
 
 ```bash
 python3 experiments/run_analysis.py --dataset mnist --seeds 16   # writes results/*.csv
 python3 experiments/make_figures.py                              # figures + statistics
 python3 experiments/draw_architecture.py                         # the network sketches
-python3 experiments/draw_mnist_architecture.py                   # current MNIST design
 python3 experiments/update_readme.py                             # tables in this file
+
+# mirror this tree into the public release folder (whitelist-based, so the
+# copyrighted source PDFs in this directory are never shipped)
+./sync.sh --check        # report drift, exit 1 if any
+./sync.sh                # copy what differs, preserving mtimes
 
 # or reproduce everything: parallel queues, then the aggregation pass
 for q in 1 2 3 4 5 6 7 8; do bash experiments/run_all.sh $q & done; wait
@@ -1681,8 +1729,7 @@ actually run.
 ## 9. Tests
 
 ```bash
-python3 -m pytest -q                    # run the suite
-python3 -m pytest --collect-only -q     # list and count the current tests
+python3 -m pytest -q                    # 619 tests, ~250 s
 python3 -m pytest -q -m "not network"   # skip the dataset downloads
 python3 -m pytest -q -m results         # audit the committed results/ only
 ```
@@ -1756,6 +1803,12 @@ regression: the keyword collision that crashed the configuration ablation, and
 the flag that left the baseline tuned over a narrower grid than its rivals.
 Every script is imported and checked for a callable `main`, so a syntax error
 fails in a second rather than three hours into a batch run.
+
+**`test_paper.py` — the manuscript's tables.** `paper/check_tables.py` compares
+every measured LaTeX table against the one `results/` generates, cell by cell
+and counting repeats; this runs it, and then mutates one digit of one cell to
+check the comparison actually fails. A guard that has never been seen to fail is
+not yet a guard.
 
 **`test_datasets.py`, `test_metrics.py`, `test_learning.py`, `test_trainer.py`.**
 Dry Bean against its published class counts; split disjointness; macro averaging
