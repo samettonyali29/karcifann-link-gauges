@@ -60,6 +60,10 @@ EDGE_SPECS = {
     # note that "headroom_*.csv" above would otherwise swallow it while
     # checking nothing, the same way that entry once swallowed headroom itself.
     "split_robustness_*.csv": (("method",), ("shape", "scale")),
+    # The depth study records the two baselines with an empty shape and the
+    # learning rate in the scale column, exactly as gauge_family does, so the
+    # same axes apply to all four of its methods.
+    "depth_gauges_*.csv": (("method",), ("shape", "scale")),
 }
 
 
