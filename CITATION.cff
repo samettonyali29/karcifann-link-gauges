@@ -1,0 +1,23 @@
+cff-version: 1.2.0
+title: >-
+  Telescoping link gauges in backpropagation: a structural
+  analysis of the KarcıFANN update
+message: If you use this software or its results, please cite it.
+type: software
+authors:
+  - family-names: Tonyalı
+    given-names: Samet
+    affiliation: Gümüşhane University
+    orcid: https://orcid.org/0000-0001-7799-2771
+license: MIT
+keywords:
+  - fractional-order derivative
+  - backpropagation
+  - learning rate
+  - functional equation
+  - neural network optimisation
+abstract: >-
+  A NumPy implementation and empirical study of Karcı fractional artificial
+  neural networks, together with a characterisation theorem showing that a
+  per-link gauge collapses a backpropagation chain if and only if it has the
+  form g(a)/g(b).
