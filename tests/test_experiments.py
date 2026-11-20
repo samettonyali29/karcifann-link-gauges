@@ -493,6 +493,23 @@ def test_readme_tables_match_the_results_they_report():
     assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
+def test_the_readme_inventory_counts_what_is_actually_there():
+    """The repository map in section 0 counts files; counts rot.
+
+    It claimed 102 CSVs and 104 figure files when there were 113 and 108, and
+    563 tests when there were 619 -- three numbers typed once and never
+    revisited.  They are too cheap to recount to be left to memory.
+    """
+    readme = (ROOT / "README.md").read_text()
+    csvs = len(list((ROOT / "results").glob("*.csv")))
+    figures = len([p for p in (ROOT / "figures").iterdir() if p.is_file()])
+    stated_csvs = int(re.search(r"\| `results/` \| (\d+) CSVs", readme).group(1))
+    stated_figures = int(re.search(r"\| `figures/` \| (\d+) files", readme).group(1))
+    assert stated_csvs == csvs, f"README says {stated_csvs} CSVs, found {csvs}"
+    assert stated_figures == figures, \
+        f"README says {stated_figures} figure files, found {figures}"
+
+
 def test_every_generated_table_has_a_home_in_the_readme():
     """A generator with no marker silently produces nothing."""
     module = load_script("update_readme")
@@ -612,6 +629,44 @@ def test_prose_number_checker_ignores_fenced_code_and_declared_numbers():
         del module.DERIVED_NUMBERS["0.55"]
 
 
+def test_readme_states_the_real_test_count():
+    """A hand-typed count drifts silently; this pins it to the collection.
+
+    The README said 518 while 545 were collected, so the number had gone stale
+    at some earlier point without anything noticing.
+    """
+    import subprocess
+
+    # Count what a clone collects, not what this tree does: the files sync.sh
+    # holds back are not in the released suite the README describes.
+    ignored = [f"--ignore=tests/{name}" for name in sorted(unpublished_test_files())]
+    completed = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "--collect-only", *ignored],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    match = re.search(r"(\d+) tests collected", completed.stdout)
+    assert match, completed.stdout[-2000:]
+    collected = int(match.group(1))
+
+    readme = (ROOT / "README.md").read_text()
+    # Both sites, not just the usage line: the repository map in section 0 said
+    # 563 while this one said 619, because pinning one mention leaves the other
+    # free to rot.  Named patterns rather than every "N tests" in the file --
+    # section 8.6b quotes the suite size at the time of the clean-room rerun,
+    # which is history and must not move, and section 8.3 counts statistical
+    # tests, which are not these tests at all.
+    sites = {
+        "section 0 repository map": r"\| `tests/` \| (\d+) tests",
+        "section 9 usage line": r"pytest -q\s+# (\d+) tests",
+    }
+    for where, pattern in sites.items():
+        stated = re.search(pattern, readme)
+        assert stated, f"README no longer states a test count in the {where}"
+        assert int(stated.group(1)) == collected, (
+            f"README says {stated.group(1)} tests in the {where}, "
+            f"pytest collects {collected}"
+        )
 
 
 # =====================================================================
@@ -734,6 +789,40 @@ def test_the_install_line_names_every_third_party_import():
         f"imported but not in the install line: {sorted(required - declared)}")
 
 
+def manuscript_or_skip() -> Path:
+    """The manuscript source, or a skip.
+
+    paper/ is working material and is not published, so every guard that reads
+    the manuscript has nothing to read in the release and in any clone of it.
+    Skipping is right rather than lenient: the check still runs wherever the
+    thing it checks exists, which is the tree the manuscript is written in.
+    """
+    path = ROOT / "paper" / "karcifann-gauges.tex"
+    if not path.exists():
+        pytest.skip("no manuscript in this tree")
+    return path
+
+
+def unpublished_test_files() -> set[str]:
+    """Test files sync.sh keeps out of the public release.
+
+    The README is the released repository's document: what it describes and
+    the count it states are what a clone actually gets, not what this working
+    tree happens to carry alongside the manuscript.  A clone has no sync.sh
+    and holds nothing back, so there this set is empty -- and it is empty of
+    exactly the files the clone does not have, which is why the same two
+    guards below read true in both trees.
+    """
+    script = ROOT / "sync.sh"
+    if not script.exists():
+        return set()
+    declared = re.search(r"^PRUNE='([^']*)'", script.read_text(), re.M)
+    assert declared, "sync.sh no longer declares PRUNE"
+    pruned = re.compile(declared.group(1))
+    return {path.name for path in (ROOT / "tests").glob("*.py")
+            if pruned.search(f"tests/{path.name}")}
+
+
 def test_section_9_names_every_test_file():
     """The tests section must describe the suite that exists.
 
@@ -743,9 +832,109 @@ def test_section_9_names_every_test_file():
     """
     readme = (ROOT / "README.md").read_text()
     section = readme[readme.index("## 9. Tests"):readme.index("## 10.")]
+    held_back = unpublished_test_files()
     missing = sorted(path.name for path in (ROOT / "tests").glob("*.py")
-                     if path.name not in section)
+                     if path.name not in section and path.name not in held_back)
     assert not missing, f"test files not described in section 9: {missing}"
+
+    described = sorted(name for name in held_back if name in section)
+    assert not described, (
+        "section 9 describes test files the release does not ship: "
+        f"{described}")
+
+
+# =====================================================================
+# paper/  /  the same rot, one directory over
+# =====================================================================
+
+#: Numbers the paper draft may quote that no generated table contains, each
+#: with the reason it is not table-backed.  Same contract as
+#: update_readme.DERIVED_NUMBERS -- see the docstring below for why.
+PAPER_DERIVED = {
+    "0.28": "CF chained minus gradient descent, table:chained-mnist-tuned",
+    "0.245": "mean CI half-width of the KarciFANN column, table:accuracy",
+    "0.12": "spread of the three average ranks in table:gauge-ablation-stats",
+    # Superseded figures, retained deliberately to record what a flaw cost.
+    "0.01": "threshold in the exp(-999|d|) argument, section 4.2",
+    "0.17": "smallest Phi over all parameters, MNIST power gauge, "
+            "results/mnist_e5_factor_spread.csv (the min column, not p05)",
+    "4.32": "largest Phi over all parameters, MNIST power gauge, "
+            "results/mnist_e5_factor_spread.csv (the max column, not p95)",
+    "0.25": "analytic maximum of the uniform-prediction MSE (C-1)/C^2, at C=2",
+    "15.76": "best-to-worst spread across the five methods on Optdigits, table:accuracy",
+    "5.08": "best-to-worst spread across the five methods on Vehicle, table:accuracy",
+    "56.54": "configuration A on Vehicle's collapsing split, headroom_splits",
+    "53.98": "configuration A on Satimage's collapsing split, headroom_splits",
+    "68.32": "configuration A on Segment's collapsing split, headroom_splits",
+    "77.15": "configuration A at split 0 on Vehicle, headroom_splits",
+    "3.29": "across-split SD over mean paired seed SD, Satimage, split_robustness",
+    "4.04": "across-split SD over mean paired seed SD, Segment, split_robustness",
+    "0.03": "floor of Vehicle's 13-point multiplier grid, run_all.sh",
+    "0.125": "fourth point of Vehicle's 13-point multiplier grid and of "
+             "configuration A's 14-point rate grid, run_all.sh:37 and "
+             "headroom.py:76 -- a searched setting that never won, so it "
+             "appears in no results table",
+    "0.93": "median paired (configuration gain - |power - SGD|) on Vehicle's "
+            "ten splits, headroom_splits vs split_robustness",
+    "0.90": "Vehicle's split-robustness mean with split 1 replaced by its "
+            "re-tuned value, section 6.4 -- an illustration, not an estimate, "
+            "so it is deliberately not a generated table cell",
+    "0.875": "power's rank gap to the runner-up at full stored precision, "
+             "results/stats_nemenyi.csv. table:ranks prints 0.88, and solving "
+             "the suite-size arithmetic from that rounded value is what put "
+             "N at 48 instead of 49",
+    "0.0161": "sign test on Vehicle, Holm across the 80 primary comparisons",
+    "0.2085": "sign test on Pendigits, Holm across the 80 primary comparisons",
+    "4.93": "exp minus gradient descent on Vehicle, table:accuracy "
+            "(82.2754 - 77.3438; the rounded cells give 4.94, the means 4.93)",
+}
+
+
+def test_the_paper_quotes_only_numbers_the_tables_support():
+    """The outline is prose beside generated tables, one directory over.
+
+    Every stale-number defect in this project came from exactly that shape:
+    narrative written for one run left sitting next to a regenerated table.
+    The paper draft inherits the problem, so it inherits the check -- any
+    figure it quotes must appear in a generated table or be declared here with
+    a reason.
+    """
+    paper = ROOT / "paper"
+    if not paper.exists():
+        pytest.skip("no paper yet")
+
+    readme = (ROOT / "README.md").read_text()
+    table_numbers = set()
+    for match in re.finditer(r"<!-- table:([a-z-]+) -->\n(.*?)\n<!-- /table:\1 -->",
+                             readme, re.S):
+        table_numbers |= set(re.findall(r"\d+\.?\d*", match.group(2)))
+
+    problems = []
+    sources = sorted(paper.glob("*.md")) + sorted(paper.glob("*.tex"))
+    for path in sources:
+        text = path.read_text()
+        if path.suffix == ".tex":
+            text = re.sub(r"^\s*%.*$", " ", text, flags=re.M)      # comments
+            text = re.sub(r"\\(?:label|ref|cite[a-z]*|includegraphics)"
+                          r"(?:\[[^\]]*\])?\{[^}]*\}", " ", text)
+            text = re.sub(r"10\^\{-?\d+\}", " ", text)            # exponents
+            text = re.sub(r"\\times", " ", text)
+            # TeX lengths are layout, not data: 0.70\linewidth, 1.2em, 3pt ...
+            text = re.sub(r"\d*\.?\d+\s*(?:\\(?:line|text|tbl|col)width"
+                          r"|em|ex|pt|cm|mm|in)\b", " ", text)
+        else:
+            text = re.sub(r"```.*?```", " ", text, flags=re.S)
+            text = re.sub(r"`[^`]*`", " ", text)      # inline code: names, not data
+        for match in re.finditer(r"(?<![\w.])(\d{1,3}\.\d{2,3})(?![\w.])", text):
+            value = match.group(1)
+            if value in table_numbers or value in PAPER_DERIVED:
+                continue
+            line = text[:match.start()].count("\n") + 1
+            context = " ".join(text[max(0, match.start() - 60):match.start() + 30].split())
+            problems.append(f"  {path.name}:{line}: {value} is in no table -- ...{context}...")
+
+    assert not problems, (
+        "the paper quotes numbers no generated table contains:\n" + "\n".join(problems))
 
 
 # =====================================================================
@@ -850,7 +1039,159 @@ def test_sync_publishes_the_code_but_not_the_source_articles():
     strays = [p.name for p in ROOT.glob("*.pdf") if p.name in named]
     assert not strays, f"sync.sh names source articles explicitly: {strays}"
 
-    assert "paper" not in published_dirs, "the manuscript must stay outside the release"
+    # And paper/ must stay out of it.  The manuscript, its sources and its
+    # build products are working material; the release carries the code, the
+    # results and the figures the paper is written from, nothing of the paper.
+    assert "paper" not in published_dirs, \
+        "sync.sh publishes paper/; the manuscript is not part of the release"
+
+
+def test_highlights_fit_the_publisher_limit_and_match_the_separate_file():
+    """Highlights are a separate submission item with a hard length limit.
+
+    Elsevier allows three to five bullets of at most 85 characters each.  One
+    of ours reached 106 after a revision, which no amount of careful prose
+    elsewhere would have caught -- the constraint is on the rendered string,
+    not on the argument.  The standalone file is uploaded separately from the
+    manuscript, so the two can drift apart silently; they are compared here.
+    """
+    manuscript = ROOT / "paper" / "karcifann-gauges.tex"
+    separate = ROOT / "paper" / "highlights.txt"
+    if not manuscript.exists() or not separate.exists():
+        pytest.skip("no manuscript or highlights file")
+
+    block = re.search(r"\\begin\{highlights\}(.*?)\\end\{highlights\}",
+                      manuscript.read_text(), re.S)
+    assert block, "the manuscript no longer declares a highlights environment"
+
+    def flatten(text):
+        text = re.sub(r"\s+", " ", text).strip()
+        text = re.sub(r"\$([^$]*)\$", lambda m: m.group(1).replace("\\", ""), text)
+        return text.replace("\\", "").strip()
+
+    bullets = [flatten(i) for i in re.split(r"\\item", block.group(1)) if i.strip()]
+    filed = [line[2:].strip() for line in separate.read_text().splitlines()
+             if line.startswith("- ")]
+
+    assert 3 <= len(bullets) <= 5, f"{len(bullets)} highlights; the publisher allows 3-5"
+    assert bullets == filed, (
+        "the manuscript and paper/highlights.txt disagree:\n"
+        + "\n".join(f"  tex: {a}\n  txt: {b}" for a, b in zip(bullets, filed) if a != b))
+
+    too_long = [f"{len(b)} chars: {b}" for b in bullets if len(b) > 85]
+    assert not too_long, "highlights over the 85-character limit:\n  " + "\n  ".join(too_long)
+
+
+def test_every_numbered_result_is_claimed_in_the_contributions():
+    """A proposition nobody claims is a proposition nobody reads.
+
+    Proposition 10 was added in revision, given a proof and two numerical
+    checks, and then left out of the contribution list for several drafts --
+    which is the one place a reader decides whether the paper is worth their
+    time.  The list and the theorem environments are compared here so the two
+    cannot drift apart again.
+    """
+    manuscript = ROOT / "paper" / "karcifann-gauges.tex"
+    if not manuscript.exists():
+        pytest.skip("no manuscript")
+    tex = manuscript.read_text()
+
+    block = re.search(r"\\paragraph\{Contributions\}(.*?)\\end\{enumerate\}", tex, re.S)
+    assert block, "the manuscript no longer has a contributions list"
+
+    stated = re.findall(
+        r"\\begin\{(?:theorem|corollary|proposition)\}\[([^\]]*)\]\s*\\label\{([^}]*)\}", tex)
+    assert stated, "no numbered results found"
+
+    unclaimed = [f"{label} ({title})" for title, label in stated
+                 if label not in block.group(1)]
+    assert not unclaimed, (
+        "numbered results the contributions do not mention:\n  " + "\n  ".join(unclaimed))
+
+
+def test_the_organisation_paragraph_accounts_for_every_section():
+    """The roadmap must not fall behind the paper it describes.
+
+    Sections were added during revision -- the change-of-variable subsection,
+    the split-robustness study -- and the paragraph kept its original list, so
+    a reader was promised nine results in Section 6 and given ten.
+
+    The 2026-09-24 review asked for that paragraph to be two sentences rather
+    than an enumeration, so the per-subsection count it used to check no longer
+    applies.  What still must hold is coverage: every top-level section is
+    named, so no section can be added without the roadmap noticing.  The
+    paragraph names sections by reference rather than wording, which is what
+    makes this checkable.
+    """
+    manuscript = ROOT / "paper" / "karcifann-gauges.tex"
+    if not manuscript.exists():
+        pytest.skip("no manuscript")
+    tex = manuscript.read_text()
+
+    para = re.search(r"\\paragraph\{Organisation of the paper\}(.*?)\n\n", tex, re.S)
+    assert para, "the manuscript no longer has an organisation paragraph"
+    roadmap = para.group(1)
+
+    # Body sections only: the appendices added in the 2026-09-24 revision are
+    # pointed to from the section each was taken out of, which is where a
+    # reader needs them, not from the roadmap.
+    body = tex[:tex.index("\\appendix")] if "\\appendix" in tex else tex
+    top = re.findall(r"\\section\{[^}]*\}\s*\\label\{([^}]*)\}", body)
+    unmentioned = [s for s in top if s not in roadmap and s != "sec:intro"]
+    # A dashed range "\ref{a}--\ref{b}" stands for every section between them.
+    for lo, hi in re.findall(r"\\ref\{([^}]*)\}--\\ref\{([^}]*)\}", roadmap):
+        if lo in top and hi in top:
+            span = top[top.index(lo): top.index(hi) + 1]
+            unmentioned = [s for s in unmentioned if s not in span]
+    assert not unmentioned, f"sections the roadmap never mentions: {unmentioned}"
+
+
+    appendices = re.findall(r"\\section\{[^}]*\}\s*\\label\{(app:[a-z]+)\}", tex)
+    unreferenced = [a for a in appendices if f"\\ref{{{a}}}" not in body]
+    assert not unreferenced, (
+        f"appendices nothing in the body points to: {unreferenced}")
+
+    assert len(roadmap.split(".")) <= 5, (
+        "the organisation paragraph has grown back into an enumeration; the "
+        "2026-09-24 review asked for two sentences")
+
+
+
+def test_the_suite_size_the_discussion_quotes_comes_from_the_stored_gap():
+    """Section 7.2's "N >= 49" must be solved from the stored rank gap.
+
+    It read 48, which is what you get by solving with the *rounded* gap of 0.88
+    and then truncating.  The stored gap is 0.875 and the requirement is a
+    lower bound -- CD(N) has to come down *to* the gap -- so the honest answer
+    rounds up, not down.  This is the same failure as subtracting rounded table
+    cells instead of stored means, which cost a 4.93 earlier in this project.
+    """
+    import csv
+    import math
+    import re
+
+    results = ROOT / "results" / "stats_nemenyi.csv"
+    if not results.exists():
+        pytest.skip("no Nemenyi statistics")
+    with results.open() as handle:
+        rows = list(csv.DictReader(handle))
+    best = [r for r in rows if r["method"] == r["best_method"]][0]
+    runner = min((r for r in rows if r["method"] != r["best_method"]),
+                 key=lambda r: float(r["gap_to_best"]))
+    gap = float(runner["gap_to_best"])
+    cd8 = float(best["critical_difference"])
+
+    # CD(N) = q sqrt(k(k+1)/6N); recover q from the eight-dataset value.
+    q = cd8 / math.sqrt(5 * 6 / (6 * 8))
+    needed = math.ceil(5 * (q / gap) ** 2)
+
+    tex = manuscript_or_skip().read_text()
+    stated = re.search(r"observed rank gap of\s*\$([\d.]+)\$ takes \$N\\ge(\d+)\$", tex)
+    assert stated, "the discussion no longer states the suite size that way"
+    assert float(stated.group(1)) == pytest.approx(gap), (
+        f"quotes a gap of {stated.group(1)}, stored gap is {gap}")
+    assert int(stated.group(2)) == needed, (
+        f"quotes N >= {stated.group(2)}, the stored gap needs {needed}")
 
 
 @pytest.mark.results
@@ -915,12 +1256,153 @@ def test_multiseed_tuning_reproduces_the_parent_study_and_splits_as_claimed():
 
 
 @pytest.mark.results
-def test_stored_sweeps_match_the_reproduction_protocol():
-    """Check saved confirmation seeds, multiplier grids and MNIST slice boundaries."""
+def test_the_optimiser_shares_are_computed_from_stored_means():
+    """Section 6.11's percentage shares must divide stored means, not table cells.
+
+    Dry Bean's share was printed as 44%, which is 0.04/0.09 -- the two rounded
+    cells of Table 21 divided by each other.  The stored means give 0.036765
+    over 0.091912, or 40%.  This is the third time this project has published a
+    number derived by arithmetic on rounded output: `exp` minus SGD on Vehicle
+    read 4.94 instead of 4.93, and the Nemenyi suite size read 48 instead of
+    49.  Two of those were caught by reading; this one was caught by reading
+    too, which is why it is now checked.
+
+    Every share the manuscript quotes is recomputed here from
+    results/headroom_*.csv and matched against the text.
+    """
+    import csv
+    import re
+
+    tex = manuscript_or_skip().read_text()
+    sentence = re.search(r"How much of that is the optimiser alone\?(.{0,700}?)\\emph\{harmful\}",
+                         tex, re.S)
+    assert sentence, "section 6.11's shares sentence has moved"
+    quoted = {int(m) for m in re.findall(r"\$(-?\d+)\\%\$", sentence.group(1))}
+
+    computed = {}
+    for path in sorted((ROOT / "results").glob("headroom_*.csv")):
+        if "splits" in path.name:
+            continue
+        dataset = path.stem.replace("headroom_", "")
+        with path.open() as handle:
+            means = {r["configuration"]: float(r["test_mean"])
+                     for r in csv.DictReader(handle) if r["stage"] == "summary"}
+        if not means:
+            continue
+        a = next(v for k, v in means.items() if k.startswith("A ") or k.startswith("A  "))
+        plus = next(v for k, v in means.items() if k.startswith("A+"))
+        gain = max(means.values()) - a
+        if gain:
+            computed[dataset] = round(100.0 * (plus - a) / gain)
+
+    if not computed:
+        pytest.skip("no headroom measurements")
+    for value in quoted:
+        assert value in computed.values(), (
+            f"the text quotes {value}% as an optimiser share, but the stored means "
+            f"give {sorted(computed.values())} -- a share divided from rounded "
+            "table cells rather than from results/headroom_*.csv")
+
+
+#: Integer percentages the manuscript quotes, and where each comes from.  The
+#: decimal prose-number guard cannot see these -- it matches \d+\.\d\d+, and an
+#: integer has no decimal point -- which is how "47% between training and test"
+#: survived three read-throughs while describing the wrong statistic.  Design
+#: constants (a 1% basin threshold, a 95% interval, a 90% percentile band) are
+#: conventions rather than measurements and are listed as such.
+PAPER_PERCENTAGES = {
+    "1": "basin threshold: values scoring within 1% relative of a method's own best",
+    "95": "confidence-interval level, quoted in the README prose",
+    "47": "Vehicle class 0 over-represented in the unstratified validation split",
+    "36": "Vehicle class 3 under-represented in the same split",
+    "21": "worst training-to-test drift in the same split",
+    "49": "optimiser share on Satimage, A+ minus A over the gain, stored means",
+    "40": "optimiser share on Dry Bean, stored means (0.04/0.09 would read 44)",
+    "29": "optimiser share on Vehicle, stored means",
+    "27": "optimiser share on Pendigits, stored means",
+    "6": "optimiser share on Letter, stored means",
+    "-17": "optimiser share on Optdigits, stored means",
+    "-22": "optimiser share on MNIST, stored means",
+    "84": "loss swap alone as a share of the A-to-C gain, Letter, stored means",
+    "99": "the same share on Pendigits",
+    "83": "the same share on Optdigits",
+    "82": "the same share on MNIST",
+}
+
+
+def test_every_integer_percentage_is_accounted_for():
+    """No integer percentage may appear without a recorded source.
+
+    Section 5.2 read "class proportions drifted by up to 47% between training
+    and test".  47 was a real number attached to the wrong statistic, and no
+    guard looked at it, because the prose checker only inspects decimals.  This
+    closes that hole for the whole manuscript: every `$n\\%$` must be declared
+    above with what it is, so a future one cannot be added silently.
+    """
+    import re
+
+    tex = manuscript_or_skip().read_text()
+    tex = re.sub(r"^\s*%.*$", " ", tex, flags=re.M)
+    found = {m.group(1) for m in re.finditer(r"\$(-?\d{1,3})\\%\$", tex)}
+    undeclared = sorted(found - set(PAPER_PERCENTAGES), key=lambda v: int(v))
+    assert not undeclared, (
+        "integer percentages with no recorded source: "
+        + ", ".join(f"{v}%" for v in undeclared)
+        + " -- add each to PAPER_PERCENTAGES with what it measures, having "
+          "recomputed it from results/ rather than from a rounded table cell")
+
+    # The README quotes the same measurements in prose, and until this was
+    # added it was outside every guard: the manuscript was corrected from 44 %
+    # to 40 % for the Dry Bean optimiser share and the README kept the 44 %
+    # for weeks, because the decimal checker cannot see an integer and this
+    # test only ever read the .tex.  The README may quote a subset, so only
+    # the undeclared direction is an error here.
+    readme = (ROOT / "README.md").read_text()
+    readme = re.sub(r"<!-- table:([a-z-]+) -->\n.*?\n<!-- /table:\1 -->", " ",
+                    readme, flags=re.S)
+    readme = re.sub(r"```.*?```", " ", readme, flags=re.S)
+    readme = readme.replace("\u2212", "-")          # the README uses a true minus
+    in_readme = {m.group(1) for m in re.finditer(r"(?<![\w.])(-?\d{1,3})\s?%", readme)}
+    undeclared = sorted(in_readme - set(PAPER_PERCENTAGES), key=lambda v: int(v))
+    assert not undeclared, (
+        "integer percentages in README prose with no recorded source: "
+        + ", ".join(f"{v}%" for v in undeclared)
+        + " -- add each to PAPER_PERCENTAGES with what it measures, having "
+          "recomputed it from results/ rather than from a rounded table cell")
+
+    # Staleness is judged against both documents together.  Judging it against
+    # the manuscript alone made a README-only figure undeclarable: the CI level
+    # is quoted as "95 %" in the README prose and only ever as an unmathed
+    # "95\%" inside manuscript captions, so declaring it satisfied the README
+    # direction and immediately failed the staleness one.
+    stale = sorted(set(PAPER_PERCENTAGES) - found - in_readme, key=lambda v: int(v))
+    assert not stale, (
+        f"declared percentages neither document quotes: {stale} -- "
+        "remove them so the list stays a description of the paper")
+
+
+@pytest.mark.results
+def test_the_protocol_section_describes_the_experiment_that_was_run():
+    """Section 5 must match the code and the stored sweeps, not an earlier plan.
+
+    This is the failure the 2026-09-23 review caught once already: Table 1's
+    caption described a measurement over a training run, while its producer
+    used a synthetic probe at initialisation.  A protocol paragraph drifts
+    silently, because nothing recomputes prose.
+
+    The checks below are the claims most able to drift apart from the code --
+    the seed sets, the multiplier grids the entry point actually passes, and
+    MNIST's exception to stratified splitting.
+    """
     import csv
     import re
 
     root = ROOT
+    tex = manuscript_or_skip().read_text()
+
+    # "Tuning uses a single seed, 1 ... Confirmation uses seeds 100-115."
+    assert re.search(r"Tuning uses a single seed, \$1\$", tex), "the seed sentence moved"
+    assert re.search(r"seeds \$100\$--\$115\$", tex), "the confirmation-seed range moved"
     sweeps = sorted((root / "results").glob("gauge_family_*.csv"))
     if not sweeps:
         pytest.skip("no gauge-family sweeps")
@@ -930,7 +1412,7 @@ def test_stored_sweeps_match_the_reproduction_protocol():
                             if r.get("stage") == "seed" and r.get("seed")})
         assert seeds == list(range(100, 116)), f"{path.name} confirmed on {seeds[:3]}..."
 
-    # The stored grids have 9 multipliers, 13 on Vehicle. The default is
+    # Table 7 says 9 multipliers, 13 on Vehicle.  The script's own default is
     # narrower; run_all.sh passes the published grid, so check the entry point
     # rather than the default, which is what a reproduction would use.
     run_all = (root / "experiments" / "run_all.sh").read_text()
@@ -945,10 +1427,91 @@ def test_stored_sweeps_match_the_reproduction_protocol():
                       if r.get("stage") == "tune" and r.get("scale")}
         expected = 13 if "vehicle" in path.name else 9
         assert len(scales) == expected, (
-            f"{path.name} swept {len(scales)} multipliers, the reproduction protocol specifies {expected}")
+            f"{path.name} swept {len(scales)} multipliers, Table 7 claims {expected}")
 
-    # MNIST uses fixed slices with 55000 / 5000 / 10000 examples.
+    # "Splits are stratified, MNIST excepted -- it uses its standard fixed
+    # slices", and Table 6 gives 55000 / 5000 / 10000.
     family = (root / "experiments" / "gauge_family.py").read_text()
     assert "x[:55000]" in family and "x[55000:60000]" in family and "x[60000:]" in family, (
         "gauge_family.py no longer takes MNIST's fixed slices")
 
+    from karcifann.datasets import mnist
+
+    x, _ = mnist()
+    assert x.min() >= 0.0 and x.max() <= 1.0, (
+        "MNIST is no longer scaled to [0, 1]; Section 5.4 says pixels are divided by 255")
+
+
+def test_no_stale_abstract_artefact_ships_with_the_paper():
+    """A `.abs` file must not disagree with the manuscript's abstract.
+
+    The cas-sc class writes `paper/<name>.abs` when intermediates are kept, and
+    a rebuild does not refresh it.  One survived three revisions of the
+    abstract and still held the superseded resampling language; nothing in the
+    build referenced it, so nothing complained, and it would have gone out with
+    a submission package copied from `paper/`.  Either it matches or it should
+    not be there.
+    """
+    import re
+
+    paper = ROOT / "paper"
+    if not paper.exists():
+        pytest.skip("no paper")
+    stale = []
+    manuscript = (paper / "karcifann-gauges.tex").read_text()
+    current = re.search(r"\\begin\{abstract\}(.*?)\\end\{abstract\}", manuscript, re.S)
+    assert current, "the manuscript has no abstract"
+    normalise = lambda t: " ".join(t.split())
+    for path in paper.glob("*.abs"):
+        if normalise(path.read_text())[:200] not in normalise(current.group(1)):
+            stale.append(path.name)
+    assert not stale, (
+        f"{stale} disagree with the manuscript abstract -- delete them, or "
+        "regenerate them, before assembling a submission package")
+
+
+def test_the_depth_study_shares_the_main_comparison_s_splits_and_budgets():
+    """The depth study is only interpretable if one thing changed, not two.
+
+    Its whole claim is that the *configuration* is the sole difference between
+    its table and the main gauge comparison, so a difference in conclusion can
+    be attributed to the configuration.  That claim dies silently if the two
+    scripts ever carry their own copies of the split logic or the epoch and
+    batch budgets and one of them is edited: nothing would fail, and the two
+    tables would quietly stop being comparable while still being printed side
+    by side.  So the sharing is checked here rather than trusted to a comment.
+    """
+    import ast
+
+    source = (EXPERIMENTS / "depth_gauges.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+
+    imported = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module == "gauge_family"
+        for alias in node.names
+    }
+    assert {"DEFAULTS", "load"} <= imported, (
+        "depth_gauges.py must take the budgets and the split from "
+        f"gauge_family.py, not restate them; it imports {sorted(imported)}")
+
+    # ...and must not shadow either one afterwards, which would defeat the
+    # import while leaving it in place.
+    assigned = {
+        target.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    assert not ({"DEFAULTS", "load"} & assigned), (
+        "depth_gauges.py reassigns a name it imports from gauge_family.py")
+
+    # The confirmation seeds must also match the main comparison's, or the
+    # paired differences are between runs that never shared a seed.
+    for script in ("gauge_family.py", "depth_gauges.py"):
+        text = (EXPERIMENTS / script).read_text(encoding="utf-8")
+        assert "range(100, 100 + args.seeds)" in text, (
+            f"{script} no longer draws confirmation seeds from 100; the depth "
+            "study's paired comparisons assume both scripts do")

@@ -377,6 +377,7 @@ PRODUCERS = {
     "split_robustness_*.csv": "split_robustness.py",
     "headroom_splits_*.csv": "headroom_splits.py",
     "multiseed_tuning_*.csv": "multiseed_tuning.py",
+    "depth_gauges_*.csv": "depth_gauges.py",
     "summary_*.csv": "make_figures.py",
     "stats_*.csv": "make_figures.py",
 }
@@ -584,3 +585,46 @@ def test_the_multiseed_winners_are_interior_to_their_grids():
 
     assert not problems, (
         "multi-seed winners sitting on a grid boundary:\n" + "\n".join(problems))
+
+
+@pytest.mark.results
+def test_the_depth_study_selected_settings_that_actually_trained():
+    """A tuned winner must not be a run that diverged, and seeds must be shared.
+
+    Two ways this study could report a number that means nothing, neither of
+    which the grid-edge audit can see.  First, the depth configuration is
+    ReLU with cross-entropy and the gauge carries its own magnitude, so some
+    grid points overflow; if *every* point for a method on some dataset blew
+    up, validation selection would still return one of them and the table
+    would print a confirmed mean for a rule that never trained.  Second, the
+    paired comparison against SGD and Adam is only paired if the methods were
+    run on the same seeds -- otherwise the per-seed differences are between
+    unrelated runs, and the sign-flip test over them is meaningless.
+    """
+    import csv
+
+    results = Path(__file__).resolve().parent.parent / "results"
+    files = sorted(results.glob("depth_gauges_*.csv"))
+    if not files:
+        pytest.skip("the depth study has not been run")
+
+    for path in files:
+        with path.open() as handle:
+            rows = list(csv.DictReader(handle))
+
+        diverged = [r for r in rows
+                    if r["stage"] == "best" and r.get("diverged") == "True"]
+        assert not diverged, (
+            f"{path.name}: tuning selected a diverged run for "
+            f"{sorted({r['method'] for r in diverged})}")
+
+        seeds = {}
+        for row in rows:
+            if row["stage"] == "seed":
+                seeds.setdefault(row["method"], set()).add(row["seed"])
+        assert seeds, f"{path.name} has no confirmation rows"
+        shared = set.intersection(*seeds.values())
+        assert all(s == shared for s in seeds.values()), (
+            f"{path.name}: methods were confirmed on different seeds, so the "
+            f"paired comparison is not paired: "
+            f"{ {m: len(v) for m, v in seeds.items()} }")

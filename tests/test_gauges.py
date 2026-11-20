@@ -192,7 +192,7 @@ def test_a_genuinely_degenerate_gauge_is_still_recognised():
 
 @pytest.mark.parametrize("k", [-0.4, -0.2, 0.3, 1.0])
 def test_gauged_chain_factor_is_a_derivative_in_transformed_coordinates(k):
-    """Proposition 7(a): g(f)f'/g = d H(f(x)) / d H(x) when H' = g.
+    """Proposition 10(a): g(f)f'/g = d H(f(x)) / d H(x) when H' = g.
 
     The manuscript claims the telescoping factor is not an exotic object but an
     ordinary derivative in the coordinate H.  If that identity broke, the
@@ -210,7 +210,7 @@ def test_gauged_chain_factor_is_a_derivative_in_transformed_coordinates(k):
 
 
 def test_gauged_update_is_a_hessian_metric_gradient_step():
-    """Proposition 7(b): the rule's direction is grad of H(J) in the psi metric.
+    """Proposition 10(b): the rule's direction is grad of H(J) in the psi metric.
 
     With psi separable and psi'' = g(|w|), the Hessian-metric gradient of
     H(J) reproduces (g(J)/g(|w_i|)) dJ/dw_i exactly -- the direction of the
@@ -236,7 +236,7 @@ def test_gauged_update_is_a_hessian_metric_gradient_step():
 
 
 def test_the_metric_reading_is_not_descent_in_the_transformed_coordinate():
-    """Proposition 7's two halves are different statements, and the review of
+    """Proposition 10's two halves are different statements, and the review of
     2026-09-23 was right that conflating them would be an error.
 
     Reading the rule as Euclidean gradient descent on F after substituting
@@ -269,7 +269,7 @@ def test_the_metric_reading_is_not_descent_in_the_transformed_coordinate():
 
 
 def test_expected_gauged_direction_is_a_gradient_of_transformed_batch_losses():
-    """Equation (18): E_B[D0 g(J_B) grad J_B] = D0 grad E_B[H(J_B)].
+    """Equation (22): E_B[D0 g(J_B) grad J_B] = D0 grad E_B[H(J_B)].
 
     The manuscript uses this to say something precise about minibatching -- the
     expected direction targets the average of the *transformed* batch losses,
@@ -315,9 +315,9 @@ def test_expected_gauged_direction_is_a_gradient_of_transformed_batch_losses():
 
 
 def test_the_graph_collapse_holds_with_branching_and_a_shared_parameter():
-    """Proposition 5, which nothing else in this suite covers.
+    """Proposition 8, which nothing else in this suite covers.
 
-    Every other telescoping test here runs a *chain*.  Proposition 5 is the
+    Every other telescoping test here runs a *chain*.  Proposition 8 is the
     extension to a computational graph, where a parameter is reached along
     several paths and the derivative is a sum over them; the claim is that the
     same endpoint factor comes outside that sum.  A chain test cannot see
@@ -352,7 +352,7 @@ def test_the_graph_collapse_holds_with_branching_and_a_shared_parameter():
              + (g(j) / g(v)) * (h(v) / h(w)) * dj_dv * dv_dw)
     assert not np.isclose(mixed, collapsed, rtol=0, atol=1e-12), (
         "mixing generators still collapsed, which would contradict the "
-        "converse warning in Proposition 5")
+        "converse warning in Proposition 8")
 
 
 @pytest.mark.parametrize("seed", [0, 1, 2])
@@ -385,6 +385,162 @@ def test_the_descent_bound_and_its_step_limit_hold(seed):
         predicted = objective(w) - s * (1 - 0.5 * smooth * s * bound) * (grad @ (d * grad))
         assert moved <= predicted + 1e-9, f"bound (11) violated at s={s}"
         assert moved < objective(w), f"no strict decrease at s={s} < 2/(LM)"
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2])
+def test_the_stationarity_rate_bounds_the_smallest_gradient_seen(seed):
+    """Proposition 5: the O(1/K) bound on min_k ||grad J||^2.
+
+    Proposition 4 bounds one step; this is the whole trajectory, and it needs
+    the *lower* metric bound mu that Proposition 4 never used.  Checked on a
+    quadratic so that L and J* are both exact, with the metric redrawn every
+    step inside [mu, M] -- a fixed D would satisfy the bound for reasons the
+    proposition does not rely on.
+    """
+    import numpy as np
+
+    rng = np.random.default_rng(100 + seed)
+    n = 8
+    a = rng.normal(size=(n, n))
+    q = a.T @ a + 0.5 * np.eye(n)
+    smooth = np.linalg.eigvalsh(q).max()
+    low, high = 0.4, 2.5
+    s = 0.9 * 2.0 / (smooth * high)
+    constant = s * (1 - 0.5 * smooth * s * high)
+    assert constant > 0
+
+    w = rng.normal(size=n)
+    start = 0.5 * w @ q @ w                        # J* = 0 for this quadratic
+    squared = []
+    for _ in range(500):
+        d = rng.uniform(low, high, size=n)         # a fresh D_k each step
+        grad = q @ w
+        squared.append(grad @ grad)
+        w = w - s * (d * grad)
+
+    smallest = min(squared)
+    assert smallest <= start / (constant * low * len(squared))
+    # the summed form the proof telescopes, which is tighter than the min
+    assert constant * low * sum(squared) <= start + 1e-8
+    # the proposition claims the whole sequence vanishes, not a subsequence:
+    # a bounded sum of non-negative terms forces the tail to zero
+    assert squared[-1] < squared[0] * 1e-6
+
+
+def test_the_floor_bounds_the_implemented_metric_as_claimed():
+    """Proposition 6: the eps-floor is what makes mu and M finite.
+
+    The manuscript derives the two constants from the floor and an assumed
+    bound on the weights.  Those constants are only worth stating if the
+    *implementation* respects them, so they are checked against the factors
+    GaugedDescent actually forms, including at parameters of exactly zero,
+    where the floor is the only thing standing between the gauge and a
+    division by zero.
+
+    The manuscript also claims the lower bound binds in practice while the
+    upper one does not, by a margin that widens with beta.  That asymmetry is
+    the reason the text says the guaranteed decrease rather than the
+    admissible step is what limits the rule, so it is measured here rather
+    than asserted -- at alpha = 0.9 the upper gap is only a factor of a few,
+    which is why the claim is comparative and not an absolute order count.
+    """
+    import numpy as np
+
+    eps = 1e-12
+    radius, ceiling = 3.0, 0.9                     # assumed iterate bounds
+    margins = []
+
+    for alpha in (0.3, 0.5, 0.7, 0.9):
+        rng = np.random.default_rng(7)
+        beta = 1.0 - alpha
+        optimiser = GaugedDescent(PowerGauge.from_alpha(alpha), eps=eps)
+        low = (eps / max(ceiling, eps)) ** beta
+        high = (max(radius, eps) / eps) ** beta
+
+        seen_low, seen_high = np.inf, -np.inf
+        for _ in range(200):
+            params = rng.uniform(-radius, radius, size=400)
+            params[rng.integers(0, 400, 15)] = 0.0  # exercise the weight floor
+            factors = np.asarray(
+                optimiser.factors([params], float(rng.uniform(0.0, ceiling)))[0],
+                dtype=float,
+            )
+            seen_low = min(seen_low, factors.min())
+            seen_high = max(seen_high, factors.max())
+
+        assert seen_low >= low * (1 - 1e-12), f"mu violated at alpha={alpha}"
+        assert seen_high <= high * (1 + 1e-12), f"M violated at alpha={alpha}"
+        assert seen_low <= low * 1.01, f"mu not attained at alpha={alpha}"
+        assert seen_high < high / 5.0, f"M nearly attained at alpha={alpha}"
+        margins.append(high / seen_high)
+
+    # beta increases as alpha falls, so reading the list backwards must be
+    # increasing: the upper bound gets looser the further the gauge departs
+    # from the identity
+    widening = margins[::-1]
+    assert all(b > a for a, b in zip(widening, widening[1:])), widening
+
+    # alpha > 1 makes beta negative, which exchanges the two bounds: the loss
+    # ceiling now supplies the largest eigenvalue and the weight radius the
+    # smallest.  The depth study selects alpha > 1 on two datasets, so this
+    # branch of Proposition 6 is exercised by the experiments and not only by
+    # the statement.
+    for alpha in (1.2, 1.5, 2.0):
+        rng = np.random.default_rng(11)
+        beta = abs(1.0 - alpha)
+        optimiser = GaugedDescent(PowerGauge.from_alpha(alpha), eps=eps)
+        low = (eps / max(radius, eps)) ** beta
+        high = (max(ceiling, eps) / eps) ** beta
+
+        seen_low, seen_high = np.inf, -np.inf
+        for _ in range(200):
+            params = rng.uniform(-radius, radius, size=400)
+            params[rng.integers(0, 400, 15)] = 0.0
+            factors = np.asarray(
+                optimiser.factors([params], float(rng.uniform(0.0, ceiling)))[0],
+                dtype=float,
+            )
+            seen_low = min(seen_low, factors.min())
+            seen_high = max(seen_high, factors.max())
+
+        assert seen_low >= low * (1 - 1e-12), f"mu violated at alpha={alpha}"
+        assert seen_high <= high * (1 + 1e-12), f"M violated at alpha={alpha}"
+
+
+def test_the_conditioning_corollary_is_one_at_the_identity_and_grows():
+    """Corollary 7: M/mu = (R J0 / eps^2)^(1-alpha), equal to 1 at alpha = 1.
+
+    The corollary is the paper's reason for expecting no robust advantage from
+    departing further from gradient descent, so both halves of it -- the value
+    at the identity and the monotonicity -- are pinned rather than asserted.
+    """
+    import numpy as np
+
+    eps, radius, ceiling = 1e-12, 3.0, 0.9
+    span = (max(radius, eps) * max(ceiling, eps)) / eps ** 2
+    assert span > 1.0
+
+    ratios = [span ** beta for beta in np.linspace(0.0, 0.95, 40)]
+    assert ratios[0] == pytest.approx(1.0)
+    assert all(np.diff(ratios) > 0)
+
+    # M/mu assembled from the two separate bounds must give the same number
+    for beta in (0.1, 0.5, 0.9):
+        separately = ((max(radius, eps) / eps) ** beta) / (
+            (eps / max(ceiling, eps)) ** beta
+        )
+        assert separately == pytest.approx(span ** beta, rel=1e-9)
+
+    # The corollary is stated in |beta|, so the price of alpha = 1 + b must
+    # equal the price of alpha = 1 - b.  Reading it in beta alone would make
+    # the ratio shrink below one for alpha > 1, which is the opposite of what
+    # the exchanged bounds of Proposition 6 give.
+    for beta in (0.2, 0.5, 1.0):
+        above = ((max(ceiling, eps) / eps) ** beta) / ((eps / max(radius, eps)) ** beta)
+        below = ((max(radius, eps) / eps) ** beta) / ((eps / max(ceiling, eps)) ** beta)
+        assert above == pytest.approx(below, rel=1e-9)
+        assert above == pytest.approx(span ** beta, rel=1e-9)
+        assert above > 1.0
 
 
 def test_the_batch_transform_counterexample_is_correct():

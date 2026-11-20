@@ -289,3 +289,44 @@ def test_load_agrees_with_the_direct_loader():
     assert np.array_equal(a[0], b[0]) and np.array_equal(a[1], b[1])
 
 
+def test_the_unstratified_drift_the_protocol_section_quotes_is_reproducible():
+    """Section 5.2's class-proportion drift must be the statistic it names.
+
+    The section quoted "up to 47% between training and test".  47% is real, but
+    it is the *validation* split's worst departure from the whole dataset's
+    proportions; training against test is 21%.  The prose-number guard could
+    not catch it because that guard only inspects decimals, and 47 has none --
+    so the claim is pinned here instead, against the loader it describes.
+    """
+    import re
+    from pathlib import Path
+
+    from karcifann.datasets import load
+
+    x, t = load("vehicle", scale=False)
+    classes = t.shape[1]
+    (_, ttr), (_, tva), (_, tte) = train_val_test_split(
+        x, t, 0.15, 0.15, seed=0, stratify=False)
+
+    def proportions(target):
+        return np.bincount(target.argmax(1), minlength=classes) / len(target)
+
+    whole, train, val, test = (proportions(v) for v in (t, ttr, tva, tte))
+    drift = (val - whole) / whole * 100
+    over, under = drift.max(), drift.min()
+    train_to_test = (np.abs(test - train) / train).max() * 100
+
+    root = Path(__file__).resolve().parent.parent
+    manuscript = root / "paper" / "karcifann-gauges.tex"
+    if not manuscript.exists():
+        pytest.skip("no manuscript in this tree")
+    tex = manuscript.read_text()
+    sentence = re.search(r"with plain random splitting at the same seed.*?"
+                         r"reversed the headline ranking", tex, re.S)
+    assert sentence, "section 5.2's splitting sentence has moved"
+    quoted = [int(v) for v in re.findall(r"\$(\d+)\\%\$", sentence.group(0))]
+
+    assert round(over) in quoted, f"validation over-representation is {over:.0f}%, text quotes {quoted}"
+    assert round(abs(under)) in quoted, f"under-representation is {abs(under):.0f}%, text quotes {quoted}"
+    assert round(train_to_test) in quoted, (
+        f"training-to-test drift is {train_to_test:.0f}%, text quotes {quoted}")
